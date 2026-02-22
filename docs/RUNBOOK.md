@@ -31,6 +31,14 @@ docker-compose up -d
 ## Запуск
 
 ```bash
+# Тест подключения к биржам (публичные данные, без ключей)
+python scripts/test_connection.py
+
+# Тест конкретной биржи
+python scripts/test_connection.py binance
+python scripts/test_connection.py bybit
+python scripts/test_connection.py okx
+
 # Основной запуск (TODO)
 python -m src.main
 

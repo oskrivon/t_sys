@@ -2,16 +2,11 @@
 
 ## In Progress
 
-- [ ] Начальная структура проекта и документация
-
 ## TODO
 
-### Phase 1: Core Infrastructure
-- [ ] Настроить Python проект (pyproject.toml, ruff, mypy)
-- [ ] Реализовать базовые модели данных (Candle, Order, Trade)
-- [ ] Создать ExchangeManager с адаптерами Binance/Bybit/OKX
-- [ ] Настроить Redis + TimescaleDB (docker-compose)
+### Phase 1: Core Infrastructure (продолжение)
 - [ ] Реализовать WebSocket коннекторы для real-time данных
+- [ ] Запустить и протестировать docker-compose (TimescaleDB + Redis)
 
 ### Phase 2: Data Collection
 - [ ] Collectors для orderbook, trades, candles
@@ -47,4 +42,16 @@
 - Sentiment analysis (новости, соцсети)
 
 ## Done
+
+### 2025-02-22 — Phase 1: Core Infrastructure (часть 1)
+- [x] Настроить Python проект (pyproject.toml, ruff, mypy)
+- [x] Реализовать Settings/Config через pydantic-settings
+- [x] Реализовать базовые модели данных (Candle, Order, Trade, Ticker, Balance, Position, OrderBook)
+- [x] Создать ExchangeAdapter (абстрактный интерфейс)
+- [x] Создать CCXTAdapter (реализация через CCXT)
+- [x] Создать ExchangeManager с адаптерами Binance/Bybit/OKX
+- [x] Настроить docker-compose для Redis + TimescaleDB
+- [x] Создать тестовый скрипт подключения (scripts/test_connection.py)
+- [x] Документация по API ключам бирж (docs/EXCHANGES_SETUP.md)
+- [x] Инициализация git репозитория
 

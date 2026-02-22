@@ -18,29 +18,39 @@ Trading Infrastructure — гибкая платформа для анализа
 
 ```
 src/
-├── core/                    # Ядро системы
-│   ├── exchange/            # CCXT обёртки, унификация API
-│   ├── websocket/           # WS менеджеры для real-time
-│   └── models/              # Pydantic модели: Order, Trade, Candle
+├── core/                    # Ядро системы ✅
+│   ├── config.py            # ✅ Settings через pydantic-settings
+│   ├── exchange/            # ✅ CCXT обёртки, унификация API
+│   │   ├── base.py          # ✅ Абстрактный ExchangeAdapter
+│   │   ├── ccxt_adapter.py  # ✅ Реализация через CCXT
+│   │   └── manager.py       # ✅ ExchangeManager (multi-exchange)
+│   ├── websocket/           # 🔲 WS менеджеры для real-time
+│   └── models/              # ✅ Pydantic модели
+│       └── base.py          # ✅ Ticker, Candle, Order, Trade, Balance, etc.
 ├── data/                    # Слой данных
-│   ├── collectors/          # Асинхронные сборщики
-│   ├── storage/             # TimescaleDB, Redis адаптеры
-│   └── cache/               # Кэш orderbook, тикеров
+│   ├── collectors/          # 🔲 Асинхронные сборщики
+│   ├── storage/             # 🔲 TimescaleDB, Redis адаптеры
+│   └── cache/               # 🔲 Кэш orderbook, тикеров
 ├── strategy/                # Стратегии и анализ
-│   ├── backtester/          # Event-driven бэктестер
-│   ├── patterns/            # Детекторы паттернов
-│   └── signals/             # Генераторы сигналов
+│   ├── backtester/          # 🔲 Event-driven бэктестер
+│   ├── patterns/            # 🔲 Детекторы паттернов
+│   └── signals/             # 🔲 Генераторы сигналов
 ├── execution/               # Торговля
-│   ├── orders/              # Order management system
-│   ├── risk/                # Position sizing, limits
-│   └── arbitrage/           # Cross-exchange арбитраж
+│   ├── orders/              # 🔲 Order management system
+│   ├── risk/                # 🔲 Position sizing, limits
+│   └── arbitrage/           # 🔲 Cross-exchange арбитраж
 ├── ai/                      # AI интеграции
-│   ├── analyzer/            # LLM анализ ситуаций
-│   └── monitor/             # Автоматический мониторинг
+│   ├── analyzer/            # 🔲 LLM анализ ситуаций
+│   └── monitor/             # 🔲 Автоматический мониторинг
 └── api/                     # Интерфейсы
-    ├── rest/                # FastAPI endpoints
-    ├── telegram/            # Бот для управления
-    └── dashboard/           # Web UI (позже)
+    ├── rest/                # 🔲 FastAPI endpoints
+    ├── telegram/            # 🔲 Бот для управления
+    └── dashboard/           # 🔲 Web UI (позже)
+
+scripts/
+└── test_connection.py       # ✅ Тест подключения к биржам
+
+Легенда: ✅ Реализовано | 🔲 Планируется
 ```
 
 ## Ключевые компоненты
