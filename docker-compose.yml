@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    container_name: trading-timescaledb
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: trading
+      POSTGRES_PASSWORD: trading
+      POSTGRES_DB: trading
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trading"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: trading-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Опционально: RedisInsight для визуализации
+  redis-insight:
+    image: redislabs/redisinsight:latest
+    container_name: trading-redis-insight
+    ports:
+      - "8001:8001"
+    depends_on:
+      - redis
+
+volumes:
+  timescaledb_data:
+  redis_data:
