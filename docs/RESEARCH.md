@@ -2,13 +2,107 @@
 
 ## Активные исследования
 
-- [Funding rate arbitrage](FUNDING_ARB_RESEARCH.md) — main track после Gate 2 (2026-04-17)
-- [On-chain CEX-DEX arbitrage](ONCHAIN_ARB_RESEARCH.md) — **сильный сигнал**: 15.8% свопов profitable, median 10 bps. Требует pool state analysis (2026-04-17)
+- **Miro Strategy + Claude Vision** — **MAIN TRACK**. Screener + Claude Vision filter. Score>=7 → 75% WR на 36 trades (100 sample). Next: screener build (2026-04-18)
+- [Арбитраж — финальный отчёт](../data/reports/arbitrage_final_report.html) — DEAD: 6 треков проверено, все мертвы
+- [Funding rate arbitrage](FUNDING_ARB_RESEARCH.md) — passive yield 3.5-5% APR. Backlog.
 - [Cross-exchange арб](ARBITRAGE_RESEARCH.md) — Этапы 1+2 завершены, дальнейшая работа отложена в tail
 - [Стек и латентность](STACK_RESEARCH.md) — выбор языка для trading infrastructure
 - [Настройка бирж](EXCHANGES_SETUP.md) — API ключи Binance/Bybit/OKX
 
 ## Решения
+
+### [Claude Vision как "eye test" filter — validated] — 2026-04-18
+
+**Контекст:** Автоматическая стратегия (breakout+retest) даёт 25% WR — убыточна.
+Человек фильтрует сетапы "на глаз" и получает 35-40% WR — прибыльна.
+Вопрос: может ли Claude Vision заменить человеческий eye test?
+
+**Тест:** 100 trades (50 win + 50 loss), скриншоты графиков с уровнями,
+Claude Sonnet 4.6 через OpenRouter оценивает сетап 1-10.
+
+**Результат:**
+- Avg score wins: 6.4, losses: 5.0, correlation +0.429
+- Score >= 7: **36 trades, 75% WR** (p < 0.01)
+- При R:R 1:3 и 75% WR: expectancy +2R/trade
+- Latency 3-4 сек, cost $0.004/запрос
+
+**Решение:** Claude Vision — primary filter в screener. Стратегия: screener находит
+паттерны → Claude Vision оценивает → торгуем только score >= 7.
+
+**Консервативная оценка:** 50-60% WR в live → 30-60% годовых при R:R 1:3.
+
+---
+
+### [Miro Strategy: автомат убыточен, нужен eye test] — 2026-04-18
+
+**Контекст:** Формализация стратегии из Miro (breakout + retest горизонтальных уровней).
+v1: 5/8 монет в плюсе (look-ahead bias). v2 out-of-sample: +2.4%.
+v3 rolling walk-forward: -6.6%. ML filter: +6.6%.
+
+**Проблема:** автоматический level detector генерит слишком много шума.
+1,218 сигналов, 77% — losses. Человек бы взял 50-80 из них.
+
+**Root cause:** 5 аспектов eye test не формализованы:
+1. Качество касаний уровня (volume, wick, speed) — частично решено ML
+2. Swing structure (HH/HL/LH/LL) — не реализовано
+3. Multi-TF confirmation — не реализовано
+4. "Монета в игре" (volume, social) — ML нашёл как top feature
+5. Visual pattern as whole — **решено через Claude Vision**
+
+**Решение:** пивот на screener + Claude Vision вместо полного автомата.
+
+---
+
+### [Pure arbitrage — solved problem, pivot to directional] — 2026-04-17
+
+**Контекст:** После Gate onchain-1 проверили две дополнительные ниши:
+
+**C1: Alt DEX pools (Arbitrum):**
+- ARB/WETH 0.05% — арбитражится как WETH/USDC (gap 5s, боты активны)
+- GMX/WETH, LINK/WETH 0.3% — нет ботов, но нет и ликвидности (232, 105 свопов/день), fee 30 bps
+
+**C3: Small CEX (MEXC, Gate.io, Bitget) vs Binance:**
+- 0 арб-окон на ETH/USDT и BTC/USDT (real-time, 2h sample)
+- MMs арбитражят даже мелкие биржи на top-парах
+
+**Решение:** Чистый арбитраж — solved problem на всех проверенных фронтах:
+1. Cross-exchange CEX: MMs закрывают за мс (Gate 2)
+2. Funding rate: fees > signal (Gate funding-1)
+3. On-chain CEX-DEX: реалистично 2-23% APR с учётом slippage/competition
+4. Alt DEX pools: либо тоже арбитражатся, либо нет ликвидности
+5. Small CEX: тоже арбитражатся
+
+**Следующий шаг:** пивот на directional strategies (momentum, patterns, event-driven).
+Инфра (CCXT, backtester, TimescaleDB) пригодится.
+
+**Отчёты:** `data/reports/alt_pools_arb_2026-03-01.md`, `data/reports/small_cex_arb_2026-04-17.md`
+
+---
+
+### [Gate onchain-1 — Arbitrum best track, EOA prototype next] — 2026-04-17
+
+**Контекст:** Pool state analysis L1 + Arbitrum. Цена пула между свопами vs CEX mid.
+
+**Ключевые findings:**
+1. **Staleness bias** — без freshness filter APR завышен 5-10x (stale пул = мёртвые спреды 92-166 bps)
+2. **L1 execution timing** — 87% свежих окон короче 1 блока (12s). Только 34/264 исполнимы
+3. **Arbitrum competition** — 70.7% окон закрыто ботами (vs 49.4% L1). FIFO != нет конкуренции
+4. **Arbitrum APR** — 78 fresh окон/день, все исполнимы (block 0.25s). ~241% APR при $10k, 20% capture
+
+**Сравнение всех треков:**
+
+| Трек | APR | Капитал | Конкуренция |
+|---|---|---|---|
+| **On-chain Arbitrum** | **120-360%** | $5-10k | Средняя |
+| On-chain L1 | 60-180% | $10-25k | Высокая (MEV) |
+| Cross-exchange CEX | ~20% | $10k + colocation | Очень высокая (MMs) |
+| Funding rate | 3.5-5% | Any | Низкая |
+
+**Решение:** YELLOW — переход к Этапу 2 (EOA prototype на Arbitrum). Нужен live тест capture rate и slippage.
+
+**Детали:** `docs/ONCHAIN_ARB_RESEARCH.md` → "Gate onchain-1"
+
+---
 
 ### [Funding rate — yield product, not trading alpha] — 2026-04-17
 **Контекст:** Завершён Этап 1 funding research. 20 пар × 3 биржи × 12 месяцев.

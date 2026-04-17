@@ -149,10 +149,10 @@ t=4: order fills (обычно < 1 сек)
 | DEX integrations | Uniswap V3 Swap Router на mainnet/Arbitrum |
 | Gas estimation | `eth_estimateGas` + priority fee oracle |
 
-## Результаты Этапа 1 (preliminary)
+## Результаты Этапа 1 — Execution price analysis
 
 **Дата:** 2026-04-17
-**Статус:** В процессе — preliminary findings
+**Статус:** Завершён
 
 ### Данные
 - 8,080 Uniswap v3 WETH/USDC (0.05% pool) свопов за 2026-03-01 через public RPC
@@ -175,32 +175,172 @@ t=4: order fills (обычно < 1 сек)
 - Ethereum L1 ($5 gas), trade $10k: 857 profitable свопов
 - Arbitrum ($0.10 gas), trade $1k: 1,176 profitable свопов
 
-### Важный caveat
-Мы видим execution price уже СОСТОЯВШИХСЯ свопов. Многие — след от арбитражных ботов, уже захвативших spread. Реальные НЕЗАПОЛНЕННЫЕ возможности требуют анализа pool state МЕЖДУ свопами.
-
-### Следующие шаги (для следующей сессии)
-1. Повторить для Arbitrum — L2, меньше MEV, дешевле gas
-2. Pool state analysis — sqrtPriceX96 между свопами vs CEX → реальные окна
-3. EOA swap prototype на Arbitrum testnet
-4. Оценка MEV-конкуренции на L2
+### Caveat
+Execution price отражает УЖЕ СОСТОЯВШИЕСЯ свопы (часть — арб-боты). Для реальных возможностей нужен pool state analysis.
 
 ### Отчёт
 `data/reports/cex_dex_spread_2026-03-01.md`
 
+---
+
+## Результаты Этапа 1 — Pool state analysis (ключевой)
+
+**Дата:** 2026-04-17
+**Статус:** Завершён для L1, Arbitrum в процессе
+
+### Методология
+Цена пула (sqrtPriceX96) МЕЖДУ свопами vs CEX mid, per-second timeline.
+Показывает **реальные незанятые окна**, доступные для EOA swap.
+
+### L1 Ethereum — Pool dynamics
+- Total swaps: 3,953, unique seconds: 2,248
+- 97.4% времени пул не меняет цену (нет свопов)
+- Gaps: median=24s, p90=60s, max=6,072s (1.7 часа)
+
+### Staleness effect (КРИТИЧЕСКИЙ finding)
+
+| Time since swap | Mean |spread| | Profitable (>15bps) |
+|---:|---:|---:|
+| 0-5s | 4.0-4.2 bps | 0.3-0.8% |
+| 6-60s | 3.9-4.7 bps | 2.2-3.4% |
+| 121-300s | 14.3 bps | 14.6% |
+| 301-1000s | **92.3 bps** | **92.4%** |
+| 1001+s | **165.9 bps** | **93.1%** |
+
+Вывод: большие спреды (>50 bps) — **stale пул** (никто не торгует).
+Без freshness filter APR завышен в 5-10x.
+
+### Реалистичные окна (fresh <= 120s)
+- **264 окна/день**, median=3s, mean=5.4s, max=46s
+- Net arb: median=2.7 bps, p90=11.6, max=79.5
+
+### Execution timing (CRITICAL)
+L1 блок = 12 секунд. Большинство окон **короче блока**:
+- >= 12s (1 блок): **34 окна** (12.9%)
+- >= 24s (2 блока): **6 окон** (2.3%)
+
+### L1 экономика (реалистичная, capture=20%)
+
+| Trade | Feasible windows | APR (20% capture) |
+|---:|---:|---:|
+| $5k | 17/day | ~61% |
+| $10k | 26/day | ~123% |
+| $25k | 34/day | ~180% |
+
+Маргинально, но не нулевое. С учётом slippage и MEV — вероятно ниже.
+
+### Arbitrum — реальные данные (WETH/USDC.e 0.05%)
+
+**Данные:** 9,030 свопов за 2026-03-01 через public RPC (Arbitrum One)
+**Pool:** `0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443`
+
+**Pool dynamics:**
+- 2.3x больше свопов чем L1 (9,030 vs 3,953)
+- Median gap: **3s** (vs 24s на L1, 8x быстрее корректировка)
+- 94% времени без свопов (vs 97.4% L1)
+
+**Staleness на Arbitrum:**
+
+| Time since swap | Mean |spread| | Profitable (>15bps) |
+|---:|---:|---:|
+| 0-5s | 4.4-4.8 bps | 0.4-0.9% |
+| 6-60s | 3.2-3.6 bps | 0.2-0.3% |
+| 121-300s | 3.8 bps | 0.9% |
+| **301+s** | **87.5 bps** | **85.9%** |
+
+**Ключевое отличие:** свежие спреды на Arbitrum МЕНЬШЕ чем на L1 (3-5 bps vs 4-5 bps).
+Арб-боты корректируют цену агрессивнее.
+
+**Fresh арб-окна (<=60s):**
+- **78 окон/день** (vs 264 на L1 fresh, 3.4x МЕНЬШЕ)
+- Duration: **median=2s**, mean=2.5s, max <10s
+- **70.7% закрыто swap-ом** (vs 49.4% L1) — больше конкуренция
+- Все окна исполнимы (block 0.25s)
+
+**Экономика Arbitrum (fresh, gas $0.10):**
+
+| Trade | Capture 10% | Capture 20% | Capture 30% |
+|---:|---:|---:|---:|
+| $1k | ~98% APR | ~196% APR | ~294% APR |
+| $5k | ~118% APR | ~236% APR | ~354% APR |
+| $10k | ~121% APR | ~241% APR | ~362% APR |
+
+### L1 vs Arbitrum (финальное сравнение)
+
+| Метрика | L1 (feasible >=12s) | Arbitrum (fresh) |
+|---|---|---|
+| Windows/day | 34 | 78 |
+| Median duration | 17s | 2s |
+| All executable? | 12.9% | 100% |
+| Net arb median | 9.9 bps | 2.6 bps |
+| Closed by swap | 49.4% | 70.7% |
+| APR@$10k, 20% capture | ~123% | **~241%** |
+
+**Вывод:** Arbitrum лучше L1 по APR несмотря на больше конкуренции,
+потому что все окна исполнимы (block 0.25s vs 12s).
+
+### Отчёты
+- L1: `data/reports/pool_state_eth_2026-03-01.md`
+- Arbitrum: `data/reports/pool_state_arb_2026-03-01.md`
+
+---
+
+## Gate onchain-1 — Решение
+
+**Дата:** 2026-04-17
+**Статус:** YELLOW (условный зелёный)
+
+### Резюме
+
+| Трек | APR estimate | Капитал | Статус |
+|---|---|---|---|
+| **On-chain Arbitrum** | **120-360%** при $5-10k | $5-10k | **BEST TRACK** |
+| On-chain L1 | 60-180% при $10-25k | $10-25k | Маргинально |
+| Cross-exchange CEX | ~20% с colocation | $10k | Tail |
+| Funding rate | 3.5-5% passive | Any | Yield product |
+
+### Почему YELLOW а не GREEN
+
+1. **Один день данных** — нужна проверка на 7-30 дней
+2. **Capture rate гипотетический** — реальный rate неизвестен без live test
+3. **Slippage не моделирован** — может съесть 30-50% profit
+4. **Конкуренция на Arbitrum** — 70.7% окон закрыто ботами
+5. **Execution latency** — наш EOA approach: detect spread → build tx → submit → ~1-3s
+
+### Решение: переход к Этапу 2
+
+Этап 2 — EOA swap prototype на Arbitrum:
+1. web3.py + Arbitrum RPC — read pool state real-time
+2. Binance WS для CEX mid real-time
+3. Test swap на Arbitrum с малой суммой ($10-50)
+4. Измерить реальное: latency, gas, slippage, fill rate
+5. Через 1-2 недели данных → Gate onchain-2
+
+### Следующие шаги (Этап 2)
+- [ ] web3.py integration, Arbitrum wallet (testnet first)
+- [ ] `src/core/chain/uniswap_adapter.py` — pool state reader + swap executor
+- [ ] Real-time CEX-DEX spread monitor (WS + pool events)
+- [ ] Testnet swap ($10-50) — замерить latency, gas, slippage
+- [ ] Live data collection 1-2 недели
+- [ ] Gate onchain-2: go/no-go на production
+
 ## Риски
 
-1. **MEV / front-running** — наши swaps видны в mempool до включения в блок. Простое решение: Arbitrum (sequencer обрабатывает FIFO, минимум MEV на L2).
-2. **Gas spikes** — в Ethereum mainnet gas может скакнуть с $2 до $50 за tx. Monitor + max_gas_cap.
-3. **Stablecoin risk** — USDC depeg (был March 2023). Monitor price pegging.
-4. **Private key theft** — custody на своём wallet, HSM или hardware wallet для production.
-5. **Compliance / KYC** — торговля через DEX обычно не требует, но CEX-leg требует.
+1. **MEV / front-running** — на Arbitrum FIFO (sequencer), MEV минимально. Но speed competition всё ещё есть.
+2. **Gas spikes** — Arbitrum gas стабильно низкий ($0.05-0.20), но может расти при L1 congestion.
+3. **Stablecoin risk** — USDC depeg. Monitor price pegging.
+4. **Private key theft** — custody на своём wallet, HSM для production.
+5. **Compliance / KYC** — DEX leg не требует, CEX leg требует.
+6. **Slippage в concentrated liquidity** — при $10k+ может быть значительным.
 
 ## Open questions
 
-1. **Subgraph vs direct RPC?** Subgraph быстрее для history queries, RPC для real-time. Для research скорее subgraph.
-2. **L2 выбор:** Arbitrum (самый ликвидный) vs Base (быстро растущий, Coinbase-владелец) vs Optimism. Стартуем с Arbitrum.
-3. **Uniswap v3 vs Uniswap v4?** v4 скорее всего выйдет в течение 2026, может изменить dynamics. Следим.
-4. **Стартовый капитал?** Для L2 slow-arb достаточно $2-10k. Для L1 — $20-50k из-за газа.
+1. ~~Subgraph vs direct RPC?~~ **Решено:** direct RPC + eth_getLogs работает, subgraph не нужен.
+2. ~~L2 выбор~~ **Решено:** Arbitrum One (подтверждено данными — самый ликвидный).
+3. **Uniswap v3 vs v4?** v4 может изменить dynamics. Следим.
+4. ~~Стартовый капитал?~~ **Решено:** $5-10k для Arbitrum slow-arb.
+5. **USDC vs USDC.e?** Анализировали USDC.e pool. Нативный USDC pool может быть ликвиднее.
+6. **Capture rate?** Нужен live тест. Гипотеза: 10-20% реалистично.
 
 ## Источники (будут обновляться)
 
