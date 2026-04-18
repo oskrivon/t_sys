@@ -44,6 +44,20 @@ BTC +14.1% (42% win rate), на медвежьем рынке. R:R 1:3 рабо�
 **Target:** каждое направление +2-3 п.п. WR. Суммарно 32% → 40-45% WR.
 При R:R 1:3 и 40% WR = expectancy +1.6%/trade → **40-60% годовых**.
 
+**Этап 3.5 — Reverse Pattern Discovery + совмещение**
+
+Data-driven подход: анализ что предшествует сильным движениям (>5% за 6h).
+Обнаружена предсказуемость 80% precision при thr 0.7. Ключевые предикторы:
+volatility squeeze, volume spike, wicks, hour_utc, RSI.
+
+- [ ] **Бэктест "Big Move Detector" стратегии** — вход при P(big_move) > 0.7,
+      direction по тренду/RSI. Сравнить с Miro Strategy по annual return.
+- [ ] **Совмещение с Miro:** Miro Signal + Big Move Detector = "сетап на сильном уровне
+      И скоро будет движение". Hypothesis: двойное подтверждение → WR 50%+.
+- [ ] **Squeeze screener** — отдельный alert: "волатильность сжалась + объём растёт,
+      скоро будет движение >5%". Без direction = для straddle или ожидания.
+- [ ] **Hourly bias** — фильтр по часам (12-13 UTC best), может улучшить все стратегии.
+
 **Этап 4 — Live trading MVP**
 - [ ] Execution через CCXT (spot, ордера limit)
 - [ ] Risk manager: max 5% депо на сделку, дневной лимит убытков

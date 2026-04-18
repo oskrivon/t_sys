@@ -2,6 +2,38 @@
 
 ## Лог
 
+### 2026-04-19 — Reverse Pattern Discovery: предикторы сильных движений
+
+**Подход от обратного:** вместо "вот паттерн, работает ли?" — "вот движение >5%, что было до него?"
+
+16 монет, 1H, 6 мес. Найдено 951 strong move (>5% за 6 часов).
+
+**ML precision (предсказание "скоро будет big move"):**
+
+| Threshold | Predicted | Precision | Recall |
+|---|---|---|---|
+| 0.5 | 473 | 67.9% | 43.7% |
+| 0.7 | 211 | **80.1%** | 23.0% |
+| 0.8 | 134 | **83.6%** | 15.3% |
+
+**Top предикторы:**
+1. `hour_utc` — 12-13 UTC самый активный
+2. `atr_pct` — волатильность повышена (+30%) перед movement
+3. `avg_lower_wick_pct` — длинные тени = борьба
+4. `volume_spike` — объём растёт ДО движения
+5. `volatility_contraction` — squeeze → explosion
+6. `rsi` — для crash >12%: RSI ~40, ниже SMA
+
+**Найденные паттерны:**
+- Squeeze → Explosion (сжатие волатильности → резкое движение)
+- Volume precedes price (кто-то набирает позицию)
+- Wicks = борьба (когда заканчивается → direction)
+- Crash pattern: RSI 40 + ниже SMA + ещё падает
+
+**Самые предсказуемые:** INJ, SUI (AUC 0.66), LINK, SOL, NEAR (0.70+)
+
+Скрипт: `scripts/research/reverse_pattern_discovery.py`
+
 ### 2026-04-19 — Multi-TF D1 levels: 4H/d1_only + ML = 13.3% годовых
 
 **Главный прорыв: D1 уровни кардинально улучшают качество сигналов.**
