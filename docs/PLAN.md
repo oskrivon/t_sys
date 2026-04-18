@@ -14,32 +14,32 @@ BTC +14.1% (42% win rate), на медвежьем рынке. R:R 1:3 рабо�
 - [x] ML classifier: GradientBoosting 29 features → WR 23%→32.5%, +6.6% годовых
 - [x] Top features: volume_ratio, volume_trend, abs_move_30d = "монеты в игре"
 
-**Этап 2 — Screener (ТЕКУЩИЙ, параллельно с Этапом 3)**
-- [ ] Screener: сканер 50+ монет, rolling level detection + breakout/retest/закол
-- [ ] "Монеты в игре" detector: CoinGecko trending API + volume spike (CCXT)
+**Этап 2 — Screener (параллельно с Этапом 3)**
+- [x] Screener: сканер 50+ монет, rolling level detection + breakout/retest/закол
+- [x] "Монеты в игре" detector: volume spike (CCXT) + big movers
 - [ ] CryptoPanic news count как доп. сигнал
-- [ ] Telegram bot: alert с графиком при формировании паттерна
-- [ ] ML score в alert (GradientBoosting, P(win))
+- [x] Telegram bot: alert с графиком при формировании паттерна
+- [x] ML score в alert (GradientBoosting, P(win))
 - [ ] Paper trading: ручные решения по screener alerts, 2-4 недели
 - [ ] **Gate strategy-2:** manual WR >35% на 30+ сделках?
 
 **Этап 3 — Формализация "eye test" (параллельно с Этапом 2)**
 
 Цель: автоматизировать то, что человек видит глазами.
-5 конкретных направлений, каждое добавляет ~2-3 п.п. к WR:
 
 - [ ] **Per-touch level quality** — для каждого касания уровня считать:
       volume на касании, длина тени, скорость отскока (candles to reverse),
       расстояние между касаниями. Агрегировать в level_quality_score.
 - [ ] **Swing structure** — HH/HL/LH/LL sequence detector.
       Uptrend = HH+HL, downtrend = LH+LL. Торговать только в direction структуры.
-- [ ] **Multi-TF analysis** — уровни на D1, паттерн на H4, precision entry на H1.
-      Уровень виден на D1 = сильнее чем виден только на H4.
+- [x] **Multi-TF analysis** — уровни на D1, вход на 4H.
+      D1 уровни дают +20pp к WR (24%→44%) и PF 0.85→2.61.
+      **Главный прорыв: 4H/d1_only + ML = 13.3% годовых.**
 - [ ] **Coin-in-play scoring** — volume_ratio + abs_move_7d + CoinGecko trending +
       news mentions. Composite score, отсечка: торговать только top-20%.
-- [ ] **Claude Vision API experiment** — скормить скриншот графика, спросить
-      "это хороший сетап для long?". Проверить на 50-100 примерах.
-      Стоимость: ~$0.5-2 за запрос (vision). Тест: ~$50-100.
+- [x] **Claude Vision API experiment** — протестировано на 4H и 1H.
+      sonnet-4.6/binary лучший (corr +0.208), но ML сильнее.
+      Vision = слабый доп. сигнал, не основной фильтр.
 
 **Target:** каждое направление +2-3 п.п. WR. Суммарно 32% → 40-45% WR.
 При R:R 1:3 и 40% WR = expectancy +1.6%/trade → **40-60% годовых**.

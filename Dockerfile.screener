@@ -1,0 +1,21 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# System deps for matplotlib
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc libffi-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml .
+RUN pip install --no-cache-dir -e ".[dev]" 2>/dev/null || \
+    pip install --no-cache-dir \
+    ccxt pandas numpy pydantic pydantic-settings structlog python-dotenv \
+    scikit-learn joblib matplotlib openai python-telegram-bot
+
+COPY src/ src/
+COPY scripts/ scripts/
+COPY data/models/ data/models/
+COPY .env .env
+
+CMD ["python", "scripts/run_screener.py"]

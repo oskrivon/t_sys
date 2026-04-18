@@ -1,0 +1,41 @@
+services:
+  screener-4h-d1:
+    build:
+      context: .
+      dockerfile: Dockerfile.screener
+    container_name: miro-screener-4h-d1
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - SCREENER_TIMEFRAME=4h
+      - SCREENER_D1_MODE=d1_only
+      - SCREENER_ML_THRESHOLD=0.25
+      - SCREENER_MODEL_PATH=data/models/miro_gb_d1.joblib
+      - SCREENER_STATE_FILE=data/screener_state_4h_d1.json
+    volumes:
+      - ./data:/app/data
+    command: python scripts/run_screener.py
+
+  screener-1h:
+    build:
+      context: .
+      dockerfile: Dockerfile.screener
+    container_name: miro-screener-1h
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - SCREENER_TIMEFRAME=1h
+      - SCREENER_D1_MODE=none
+      - SCREENER_LEVEL_LOOKBACK=72
+      - SCREENER_LEVEL_TOLERANCE_PCT=0.5
+      - SCREENER_RETEST_WINDOW=6
+      - SCREENER_MIN_LEVEL_AGE=6
+      - SCREENER_TREND_SMA=20
+      - SCREENER_RR_RATIO=2.0
+      - SCREENER_ML_THRESHOLD=0.40
+      - SCREENER_MODEL_PATH=data/models/miro_gb_1h_scalp.joblib
+      - SCREENER_STATE_FILE=data/screener_state_1h.json
+      - SCREENER_CANDLE_CLOSE_DELAY_SEC=15
+    volumes:
+      - ./data:/app/data
+    command: python scripts/run_screener.py

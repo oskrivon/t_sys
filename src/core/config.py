@@ -148,6 +148,12 @@ class Settings(BaseSettings):
     # Trading
     trading: TradingConfig = Field(default_factory=TradingConfig)
 
+    # Screener (imported lazily to avoid circular deps)
+    @property
+    def screener(self):
+        from src.screener.config import ScreenerConfig
+        return ScreenerConfig()
+
     @field_validator("log_level")
     @classmethod
     def validate_log_level(cls, v: str) -> str:

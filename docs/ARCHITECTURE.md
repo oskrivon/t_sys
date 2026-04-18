@@ -32,6 +32,10 @@ src/
 │   ├── storage/             # 🔲 TimescaleDB, Redis адаптеры
 │   └── cache/               # 🔲 Кэш orderbook, тикеров
 ├── strategy/                # Стратегии и анализ
+│   ├── models.py            # ✅ Level, Signal, SignalType, ScreenerResult
+│   ├── levels.py            # ✅ Swing points, clustering, rolling levels
+│   ├── signals.py           # ✅ Breakout/retest/zakol detection
+│   ├── features.py          # ✅ 29 ML features computation
 │   ├── backtester/          # 🔲 Event-driven бэктестер
 │   ├── patterns/            # 🔲 Детекторы паттернов
 │   └── signals/             # 🔲 Генераторы сигналов
@@ -39,12 +43,23 @@ src/
 │   ├── orders/              # 🔲 Order management system
 │   ├── risk/                # 🔲 Position sizing, limits
 │   └── arbitrage/           # 🔲 Cross-exchange арбитраж
+├── screener/                # ✅ Real-time signal scanner
+│   ├── config.py            # ✅ ScreenerConfig (pydantic-settings)
+│   ├── scanner.py           # ✅ MiroScreener: run_once/run_forever
+│   ├── coins_in_play.py     # ✅ Volume spike detector
+│   ├── data_fetcher.py      # ✅ Async batched OHLCV
+│   └── state.py             # ✅ JSON state persistence
 ├── ai/                      # AI интеграции
+│   ├── ml_scorer.py         # ✅ GradientBoosting P(win) predictor
+│   ├── vision_scorer.py     # ✅ Claude Vision via OpenRouter
+│   ├── chart_generator.py   # ✅ Candlestick chart PNG
 │   ├── analyzer/            # 🔲 LLM анализ ситуаций
 │   └── monitor/             # 🔲 Автоматический мониторинг
 └── api/                     # Интерфейсы
     ├── rest/                # 🔲 FastAPI endpoints
-    ├── telegram/            # 🔲 Бот для управления
+    ├── telegram/            # ✅ Signal alert bot
+    │   ├── bot.py           # ✅ TelegramNotifier
+    │   └── formatters.py    # ✅ Message formatting
     └── dashboard/           # 🔲 Web UI (позже)
 
 scripts/

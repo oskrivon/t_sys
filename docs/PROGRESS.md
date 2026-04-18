@@ -2,6 +2,57 @@
 
 ## Лог
 
+### 2026-04-19 — Multi-TF D1 levels: 4H/d1_only + ML = 13.3% годовых
+
+**Главный прорыв: D1 уровни кардинально улучшают качество сигналов.**
+
+Бэктест Multi-TF (D1 levels + 4H entries + ML filter):
+
+| Config | Trades/мес | WR | PF | Annual |
+|---|---|---|---|---|
+| 4H/base (no D1, no ML) | 164 | 24.2% | 0.85 | -11.3% |
+| 4H/base + ML | 38 | 31.5% | 1.26 | +4.1% |
+| **4H/d1_only + ML 0.25** | **19** | **44.3%** | **2.61** | **+13.3%** |
+| 4H/d1_only + ML 0.40 | 13 | 50.0% | 3.32 | +11.2% |
+| 4H/d1_only + ML 0.55 | 7 | 58.7% | 5.22 | +9.2% |
+
+Вывод: уровни с D1 объективно сильнее. При R:R 1:3 и 44% WR — edge реальный.
+
+Также проведено:
+- Бэктест 1H (standard/tight/scalp) — 1H без ML убыточен, с ML +3-6%
+- Vision model comparison (sonnet-4.6, haiku-4.5, gpt-4o × 3 промпта) — sonnet-4.6/binary лучший (corr +0.208), но сигнал слабый vs ML
+- D1 alignment analysis: trades near D1 levels = 26% WR vs 23% без D1
+
+Обновлён скринер:
+- `d1_mode: d1_only` — использует D1 уровни для детекции сигналов
+- Новая ML модель `miro_gb_d1.joblib` обучена на D1 данных
+- Задеплоен на сервер: `miro-screener-4h-d1` + `miro-screener-1h`
+- Telegram алерты подключены
+
+### 2026-04-18 — Screener v1: production-ready signal scanner
+
+**Этап 2 Miro Strategy — screener реализован.**
+
+Архитектура:
+- `src/strategy/` — level detection, signals, features (extracted from research scripts)
+- `src/screener/` — async scanner, coins-in-play detector, state persistence
+- `src/ai/` — ML scorer (joblib), Vision scorer (OpenRouter), chart generator
+- `src/api/telegram/` — alert bot with chart attachments
+
+Возможности:
+- Скан 50+ монет каждые 4h (aligned to Binance candle close)
+- Rolling level detection + breakout/retest/закол
+- ML score (GradientBoosting P(win)) с threshold фильтрацией
+- Claude Vision score (optional, ~$0.004/запрос)
+- Telegram alerts с графиком
+- Coins-in-play: автоматическое добавление high-volume/big-mover монет
+- State persistence (JSON) для breakout tracking между runs
+
+Запуск:
+- `python scripts/train_model.py` — обучение ML модели
+- `python scripts/run_screener.py --once` — single scan
+- `python scripts/run_screener.py` — continuous mode
+
 ### 2026-04-18 — Claude Vision test: ПОДТВЕРЖДЕНО на 100 примерах
 
 **Claude Sonnet 4.6 через OpenRouter оценивает сетапы по скриншоту графика.**
