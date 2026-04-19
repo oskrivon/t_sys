@@ -28,6 +28,7 @@ from .state import (
 )
 from .data_fetcher import fetch_all_candles
 from .coins_in_play import CoinsInPlayDetector
+from src.paper_trading.tracker import PaperTrader
 
 log = structlog.get_logger()
 
@@ -64,6 +65,7 @@ class MiroScreener:
         )
 
         self.state = load_state(config.state_file)
+        self.paper_trader = PaperTrader()
 
     async def run_once(self) -> ScreenerResult:
         """Run a single scan across all coins."""
@@ -135,6 +137,13 @@ class MiroScreener:
             ):
                 signal.vision_score = await self._get_vision_score(signal, datasets[signal.symbol])
 
+                # Vision filter: skip if below min score
+                if signal.vision_score is not None and signal.vision_score < self.config.vision_min_score:
+                    log.info("signal_below_vision_threshold",
+                             symbol=signal.symbol, vision_score=signal.vision_score,
+                             min_score=self.config.vision_min_score)
+                    continue
+
             # Send alert
             if self.notifier:
                 try:
@@ -146,9 +155,24 @@ class MiroScreener:
                 self._print_signal(signal)
                 alerted += 1
 
+            # Record paper trade
+            try:
+                self.paper_trader.record_signal(signal)
+            except Exception as e:
+                log.error("paper_trade_record_error", symbol=signal.symbol, error=str(e))
+
             self.state.add_alert_key(signal.symbol, signal.signal_type.value, ts_key)
 
-        # 6. Save state
+        # 6. Check open paper trades against current prices
+        try:
+            resolved = await self.paper_trader.check_open_trades(self.exchange)
+            if resolved:
+                log.info("paper_trades_resolved", count=len(resolved),
+                         trades=[f"{r['symbol']} {r['status']} {r['pnl_pct']:+.2f}%" for r in resolved])
+        except Exception as e:
+            log.error("paper_trade_check_error", error=str(e))
+
+        # 7. Save state
         self.state.last_run_ts = now.isoformat()
         self.state.cleanup()
         save_state(self.state, self.config.state_file)

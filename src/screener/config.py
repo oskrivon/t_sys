@@ -54,7 +54,8 @@ class ScreenerConfig(BaseSettings):
 
     # Vision
     vision_enabled: bool = False
-    vision_min_ml_score: float = 0.40
+    vision_min_ml_score: float = 0.50
+    vision_min_score: int = 8  # only alert if vision score >= this
 
     # State
     state_file: str = "data/screener_state.json"

@@ -20,6 +20,7 @@ BTC +14.1% (42% win rate), на медвежьем рынке. R:R 1:3 рабо�
 - [ ] CryptoPanic news count как доп. сигнал
 - [x] Telegram bot: alert с графиком при формировании паттерна
 - [x] ML score в alert (GradientBoosting, P(win))
+- [x] Paper trading инфраструктура: SQLite БД + авто-трекинг TP/SL + CLI stats
 - [ ] Paper trading: ручные решения по screener alerts, 2-4 недели
 - [ ] **Gate strategy-2:** manual WR >35% на 30+ сделках?
 
@@ -27,16 +28,17 @@ BTC +14.1% (42% win rate), на медвежьем рынке. R:R 1:3 рабо�
 
 Цель: автоматизировать то, что человек видит глазами.
 
-- [ ] **Per-touch level quality** — для каждого касания уровня считать:
-      volume на касании, длина тени, скорость отскока (candles to reverse),
-      расстояние между касаниями. Агрегировать в level_quality_score.
-- [ ] **Swing structure** — HH/HL/LH/LL sequence detector.
-      Uptrend = HH+HL, downtrend = LH+LL. Торговать только в direction структуры.
+- [x] **Per-touch level quality** — 22 фичи: volume ratio/trend/max, wick rejection,
+      bounce speed, touch gap, zone tightness. На 4H и D1.
+      WR +7.4pp (38.8->46.2%), PF 2.12->3.91, exp x2. С risk 4% = **14.3% annual (best).**
+- [x] **Swing structure** — HH/HL/LH/LL detector + 8 фичей. 5.7% importance,
+      но annual не растёт (+13.4% vs 14.3% baseline). Полезно как фича, не как фильтр.
 - [x] **Multi-TF analysis** — уровни на D1, вход на 4H.
       D1 уровни дают +20pp к WR (24%→44%) и PF 0.85→2.61.
       **Главный прорыв: 4H/d1_only + ML = 13.3% годовых.**
-- [ ] **Coin-in-play scoring** — volume_ratio + abs_move_7d + CoinGecko trending +
-      news mentions. Composite score, отсечка: торговать только top-20%.
+- [x] **Coin-in-play scoring** — volume_ratio + abs_move_7d + range_expansion.
+      cip_range_expansion = 3.7% importance, WR +3pp, но annual +14.2% (= baseline).
+      Полезно как ML фича, не как hard filter.
 - [x] **Claude Vision API experiment** — протестировано на 4H и 1H.
       sonnet-4.6/binary лучший (corr +0.208), но ML сильнее.
       Vision = слабый доп. сигнал, не основной фильтр.
@@ -44,25 +46,55 @@ BTC +14.1% (42% win rate), на медвежьем рынке. R:R 1:3 рабо�
 **Target:** каждое направление +2-3 п.п. WR. Суммарно 32% → 40-45% WR.
 При R:R 1:3 и 40% WR = expectancy +1.6%/trade → **40-60% годовых**.
 
+**Текущий лучший результат (honest walk-forward OOS):**
+ML top-10 + **Vision score>=8** = **WR 57.8%, PF 3.46, ~6 trades/mo.**
+407 OOS trades, 51 символ, 24 мес. Vision стоит $0.60/мес.
+(ML-only = WR 31%, PF 1.09. Vision>=8 = главный фильтр.)
+
 **Этап 3.5 — Reverse Pattern Discovery + совмещение**
 
 Data-driven подход: анализ что предшествует сильным движениям (>5% за 6h).
 Обнаружена предсказуемость 80% precision при thr 0.7. Ключевые предикторы:
 volatility squeeze, volume spike, wicks, hour_utc, RSI.
 
-- [ ] **Бэктест "Big Move Detector" стратегии** — вход при P(big_move) > 0.7,
-      direction по тренду/RSI. Сравнить с Miro Strategy по annual return.
-- [ ] **Совмещение с Miro:** Miro Signal + Big Move Detector = "сетап на сильном уровне
-      И скоро будет движение". Hypothesis: двойное подтверждение → WR 50%+.
+- [x] **Бэктест "Big Move Detector" стратегии** — standalone убыточен (WR 36%, PF 0.79).
+      Причина: предсказывает timing, но не direction. RSI — плохой direction picker.
+- [x] **Совмещение с Miro:** WR 44→48%, PF 2.6→4.5, но трейдов 19→4/мес.
+      Annual 13.3% → 4.7%. Двойной фильтр избыточен — Miro уже ловит движения.
 - [ ] **Squeeze screener** — отдельный alert: "волатильность сжалась + объём растёт,
       скоро будет движение >5%". Без direction = для straddle или ожидания.
-- [ ] **Hourly bias** — фильтр по часам (12-13 UTC best), может улучшить все стратегии.
+- [x] **Hourly bias** — hr_europe marginal +1.1pp (15.4% vs 14.3%). Самый слабый эффект.
 
-**Этап 4 — Live trading MVP**
-- [ ] Execution через CCXT (spot, ордера limit)
-- [ ] Risk manager: max 5% депо на сделку, дневной лимит убытков
-- [ ] Hybrid mode: ML auto-trade (high confidence) + alerts (medium confidence)
-- [ ] Начать с $1-2k, scale up при positive results
+**Этап 3.6 — Volume Ranking Long/Short (новый трек)**
+
+Подтверждено: Sharpe 1.62 net, +14.2% annual, MaxDD 6.4%. Market-neutral.
+Некоррелирован с Miro (разный edge: volume momentum vs S/R levels).
+
+- [ ] Paper trading: daily rebalance, track PnL в SQLite
+- [ ] Интеграция в multi-strategy portfolio manager
+- [ ] Bybit/Binance futures execution (maker orders для снижения fees)
+
+**Этап 4 — Live trading MVP (multi-strategy)**
+
+Архитектура построена: Strategy ABC + PortfolioManager + ExecutionManager.
+Три подтверждённые стратегии:
+
+| Стратегия | Edge | WR | Annual (est.) | Allocation |
+|---|---|---|---|---|
+| Miro + ML + Vision>=8 | S/R levels + AI filter | 58% | +7.3% (6 t/mo) | 40% |
+| Volume Ranking L/S | Volume momentum | — | +14% (Sharpe 1.6) | 50% |
+| Funding capture >10bps | Structural exploit | 56% | +192% (tiny size) | 10% |
+
+- [ ] Paper trading validation: 4 недели все 3 стратегии параллельно
+- [ ] Vision интеграция в live screener (score>=8 → trade, <5 → skip)
+- [ ] Volume Ranking daily rebalance бот (futures, maker orders)
+- [ ] Funding capture бот:
+      Фаза 1 (1 нед): WebSocket мониторинг funding events, paper simulation >10bps
+      Фаза 2 (1-2 нед): micro-live $100-200, leverage 5x, BTC/ETH/SOL only
+      Фаза 3: scale up до 10-20 монет, 10x, target $50-100/day
+- [ ] Risk manager: per-strategy allocation, conflict resolution, drawdown circuit breaker
+- [ ] Live execution через CCXT (spot для Miro, futures для VR + funding)
+- [ ] Начать с $2-5k, scale up при positive results
 
 ## TODO
 
@@ -91,6 +123,10 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 - Triangular arb — вероятно мёртв как и остальной арб, low priority
 - DEX интеграция — мёртв для арбитража (slippage), но может пригодиться для execution
 - Rust core — отложен, bottleneck в стратегии а не в скорости
+- On-chain analytics — whale tracking, exchange flows, DEX volume. Другой тип edge (информационный), не совместим с текущей level-based стратегией. Требует Nansen/Glassnode ($100-300/мес) + новый стек. Рассматривать после live trading.
+- Copy trading / signal aggregation — не слепое копирование, а использование чужих сигналов как input для ML. Подписка на 2-3 копитрейдера (Bitget/Bybit) + проверка через наш ML/levels = двойное подтверждение. Нет исторических данных — только forward test. Лидерборд API закрыты.
+- Funding scalp (базовый) — DEAD для average funding. Но HF capture с leverage + extreme filter (>10bps) = +$160/мес на $1k. Реализовано в Этапе 4.
+- Exploit research — систематический поиск structural edges: token unlocks, liquidation cascades, basis trade, launchpool farming. Framework: "где деньги перемещаются предсказуемо?"
 
 ### Почему арбитраж отложен
 

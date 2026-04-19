@@ -11,6 +11,37 @@
 
 ## Решения
 
+### [Level Quality + Position Sizing — best result 14.3%] — 2026-04-19
+
+**Контекст:** поиск способов улучшить Miro d1_only + ML (13.3% baseline).
+
+**Per-touch level quality (22 фичи):** для каждого касания уровня считаем volume, wick rejection, bounce speed, touch spacing. WR +7.4pp, PF 2.12->3.91, exp x2. Trades/mo падают (17->10), но quality компенсирует.
+
+**Position sizing:** adaptive по P(big_move) не лучше flat. Flat 4% > adaptive 2-5%.
+
+**Big Move Detector:** standalone убыточен (предсказывает timing, не direction). Совмещение с Miro избыточно — режет трейды без пропорционального роста WR.
+
+**Решение:** LevelQuality в ML + risk 4% = 14.3% annual (CV estimate).
+**UPDATE:** Honest walk-forward OOS на 51 символе, 24 мес = **+3.1% annual.** CV overfitted ~4x.
+Edge реален (WR 25%->31%), но скромный. Feature selection (10 фичей) критична.
+
+---
+
+### [Claude Vision OOS: 55% real WR, best filter] — 2026-04-19
+
+**Контекст:** OOS тест на 200 balanced трейдах (20 символов, last 4 months).
+Score>=8: 78% WR balanced, ~55% Bayes-adjusted (real base rate 25%).
+Correlation +0.209 воспроизведён. PF 8.56 на score>=8.
+
+**Решение:** Vision = финальный фильтр после ML. ML отсеивает мусор (25%→31% WR),
+Vision оставляет только лучшие сетапы (31%→~55% WR). Cost $0.01/trade, ~$3/мес.
+
+**DONE:** ML + Vision>=8 combined pipeline: 407 OOS trades, 51 символ, 24 мес.
+WR 57.8%, PF 3.46, ~6 trades/mo. Score 3-4 = 0% WR (антисигнал). Score 7 = baseline (бесполезен).
+**Только score 8 даёт edge.** Это финальный pipeline для Miro стратегии.
+
+---
+
 ### [Claude Vision как "eye test" filter — validated] — 2026-04-18
 
 **Контекст:** Автоматическая стратегия (breakout+retest) даёт 25% WR — убыточна.

@@ -39,6 +39,16 @@ src/
 │   ├── backtester/          # 🔲 Event-driven бэктестер
 │   ├── patterns/            # 🔲 Детекторы паттернов
 │   └── signals/             # 🔲 Генераторы сигналов
+├── strategies/              # ✅ Multi-strategy layer (N стратегий)
+│   ├── base.py              # ✅ Strategy ABC, TradeSignal, TargetPosition
+│   ├── miro_strategy.py     # ✅ Miro S/R + ML + Vision (event-driven)
+│   └── volume_ranking.py    # ✅ Volume Ranking L/S (systematic daily)
+├── portfolio/               # ✅ Portfolio management
+│   └── manager.py           # ✅ PortfolioManager: allocation, risk, conflicts
+├── paper_trading/           # ✅ Paper trading infrastructure
+│   ├── db.py                # ✅ SQLite CRUD for paper trades
+│   ├── tracker.py           # ✅ PaperTrader: record signals, check TP/SL
+│   └── stats.py             # ✅ Statistics: WR, PnL, PF, equity
 ├── execution/               # Торговля
 │   ├── orders/              # 🔲 Order management system
 │   ├── risk/                # 🔲 Position sizing, limits
@@ -63,7 +73,13 @@ src/
     └── dashboard/           # 🔲 Web UI (позже)
 
 scripts/
-└── test_connection.py       # ✅ Тест подключения к биржам
+├── run_screener.py          # ✅ Miro screener (4h loop)
+├── run_volume_ranking.py    # ✅ Volume Ranking daily rebalance
+├── run_portfolio.py         # ✅ Multi-strategy runner
+├── paper_trading.py         # ✅ Paper trading CLI (status/check/stats)
+├── daily_report.py          # ✅ Portfolio report (console + Telegram)
+├── services/                # ✅ Windows Task Scheduler .bat wrappers
+└── research/                # ✅ 15+ backtest/research scripts
 
 Легенда: ✅ Реализовано | 🔲 Планируется
 ```
