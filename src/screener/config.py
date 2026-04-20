@@ -4,18 +4,18 @@ from __future__ import annotations
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-# Default watchlist — top liquid USDT pairs
+# Default watchlist — top liquid USDT pairs on Bybit
 DEFAULT_SYMBOLS = [
-    "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT",
-    "DOGE/USDT", "ADA/USDT", "AVAX/USDT", "LINK/USDT", "DOT/USDT",
-    "MATIC/USDT", "SUI/USDT", "NEAR/USDT", "OP/USDT", "ARB/USDT",
-    "FIL/USDT", "ATOM/USDT", "APT/USDT", "LTC/USDT", "UNI/USDT",
-    "INJ/USDT", "TIA/USDT", "SEI/USDT", "FET/USDT", "RENDER/USDT",
-    "IMX/USDT", "STX/USDT", "PEPE/USDT", "WIF/USDT", "BONK/USDT",
-    "FLOKI/USDT", "RUNE/USDT", "AAVE/USDT", "MKR/USDT", "SNX/USDT",
-    "CRV/USDT", "PENDLE/USDT", "JUP/USDT", "W/USDT", "ENA/USDT",
-    "TON/USDT", "TAO/USDT", "JTO/USDT", "PYTH/USDT", "WLD/USDT",
-    "STRK/USDT", "MANTA/USDT", "DYM/USDT", "TRX/USDT", "ALGO/USDT",
+    "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "DOGE/USDT",
+    "ADA/USDT", "AVAX/USDT", "LINK/USDT", "DOT/USDT", "SUI/USDT",
+    "NEAR/USDT", "OP/USDT", "ARB/USDT", "FIL/USDT", "ATOM/USDT",
+    "APT/USDT", "LTC/USDT", "UNI/USDT", "INJ/USDT", "TIA/USDT",
+    "SEI/USDT", "FET/USDT", "RENDER/USDT", "IMX/USDT", "STX/USDT",
+    "PEPE/USDT", "WIF/USDT", "BONK/USDT", "FLOKI/USDT", "RUNE/USDT",
+    "AAVE/USDT", "MKR/USDT", "SNX/USDT", "CRV/USDT", "PENDLE/USDT",
+    "JUP/USDT", "ENA/USDT", "TON/USDT", "TAO/USDT", "JTO/USDT",
+    "PYTH/USDT", "WLD/USDT", "STRK/USDT", "MANTA/USDT", "TRX/USDT",
+    "ALGO/USDT", "SUPER/USDT", "MEME/USDT", "ONDO/USDT", "HBAR/USDT",
 ]
 
 

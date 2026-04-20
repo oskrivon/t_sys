@@ -38,13 +38,17 @@ class CoinsInPlayDetector:
             log.warning("tickers_fetch_failed", error=str(e))
             return self.base_symbols[:self.max_coins]
 
-        # Filter USDT pairs with valid volume data
+        # Filter USDT pairs with valid data (exclude delisted/dead coins)
         usdt_tickers = []
         for t in tickers:
             if not t.symbol.endswith("/USDT"):
                 continue
-            if t.volume_24h is not None and float(t.volume_24h) > 0:
-                usdt_tickers.append(t)
+            # Must have volume, bid, and ask (no bid/ask = delisted)
+            if t.volume_24h is None or float(t.volume_24h) <= 0:
+                continue
+            if t.bid is None or t.ask is None:
+                continue
+            usdt_tickers.append(t)
 
         if not usdt_tickers:
             return self.base_symbols[:self.max_coins]

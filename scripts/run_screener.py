@@ -39,9 +39,9 @@ async def main(args):
 
     config = ScreenerConfig()
 
-    # Exchange
+    # Exchange — Bybit (same as trading engine)
     exchange = CCXTAdapter(
-        exchange=Exchange.BINANCE,
+        exchange=Exchange.BYBIT,
         testnet=False,
     )
     await exchange.connect()

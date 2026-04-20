@@ -100,6 +100,15 @@ class MiroScreener:
             concurrency=self.config.fetch_concurrency,
         )
 
+        # Filter out stale data (delisted coins with frozen candles)
+        stale_cutoff = now.timestamp() - 2 * 86400  # older than 2 days
+        stale = [sym for sym, df in datasets.items()
+                 if len(df) > 0 and df.index[-1].timestamp() < stale_cutoff]
+        for sym in stale:
+            del datasets[sym]
+        if stale:
+            log.warning("stale_data_filtered", symbols=stale)
+
         # 3. Fetch D1 data if needed
         d1_datasets: dict[str, pd.DataFrame] = {}
         if self.config.d1_mode != "none":
