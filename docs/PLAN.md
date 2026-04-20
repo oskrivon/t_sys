@@ -130,12 +130,12 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 
 - [x] **Basis Trade** — RED. APR 0.6-2% в bearish рынке. Работает только в contango (bullish). Пересмотреть при смене рыночного режима.
 - [x] **Token Unlock Dumps** — YELLOW. ARB стабильно -7...-15% после unlock. Но точные даты тр��буют платный API ($50-100/мес). Ручной research 1x/мес + шорт перед крупными unlocks — feasible.
-- [ ] **Referral Rebate** — настроить свой реферал на Bybit = -30% к fees. Бесплатно, 5 минут.
+- [ ] **Referral Rebate** — создать новый субаккаунт через свой реферал = -30% к fees. Сделать при scale up ($1k+ → $35/мес экономии).
 
 ### Tier 2 — нужен парсинг/инфра
 
-- [ ] **Launchpool Front-Run** — long staking token при анонсе launchpool. Предсказуемый pump. Нужен парсинг анонсов бирж (RSS/API/Telegram).
-- [ ] **Liquidation Cascade Capture** — мониторинг OI + funding extreme → кластер ликвидаций близко. При первом движении входим в направлении каскада. Нужна модель.
+- [x] **Launchpool Front-Run** — YELLOW. Edge вероятен, но volume spikes — late signal. Нужен парсер анонсов бирж (Telegram/RSS). Data inconclusive (bearish рынок заглушает signal).
+- [x] **Liquidation Cascade Capture** — ORANGE. Это directional STRATEGY, не exploit. OI данные доступны (Bybit API), но нужен timing trigger + directional bet. Высокий risk. Отложить.
 - [ ] **Fee Rebate Mining (Market Making)** — maker rebate на illiquid парах. Limit buy @ bid + limit sell @ ask. Нужен MM algo.
 
 ### Tier 3 — backlog/проверить данными
