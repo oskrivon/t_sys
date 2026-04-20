@@ -101,6 +101,60 @@ API не возвращает `fundingInterval` поле, определяетс
 4. **Slippage при scale** → $5-10k потолок на low-liquidity coins. BTC/ETH — больше.
 5. **Latency** → если exit >15 секунд, стратегия убыточна. Нужен WS event exit.
 
+## Live тест — полный цикл (20:00 UTC, 2026-04-20)
+
+Первый полностью автоматический цикл: entry → funding credited → exit.
+
+**Timeline:**
+```
+19:59:55  6 signals emitted
+19:59:57  6 entries filled
+19:59:58  6 exits waiting for execType=Funding
+20:00:00  ws_funding_credited → exit executing (все 6)
+20:00:00  все позиции закрыты. Hold time: 2-3 секунды.
+```
+
+**0 открытых позиций после. 0 ошибок.**
+
+## Экономика при масштабировании
+
+Exact data: 6 trades, 20:00 UTC settlement, rates 10-26bps.
+
+### На $1k (10x leverage)
+
+| Монета | Rate | Funding | Fee | Net |
+|--------|------|---------|-----|-----|
+| PIEVERSE | 26.5bps | $4.41 | $1.83 | +$2.58 |
+| KERNEL | 25.0bps | $4.18 | $1.83 | +$2.34 |
+| PORTAL | 23.7bps | $3.95 | $1.83 | +$2.12 |
+| DBR | 20.9bps | $3.48 | $1.83 | +$1.65 |
+| PLAYSOUT | 14.1bps | $2.34 | $1.83 | +$0.51 |
+| NOM | 10.3bps | $1.72 | $1.83 | -$0.12 |
+| **TOTAL** | | **$20.08** | **$11.00** | **+$9.08** |
+
+Per settlement: **+$9.08**, monthly (x3/day): **~$817**
+
+### С максимальным плечом (12-25x по монете)
+
+| Capital | Per settlement | Monthly | w/ referral -30% fee |
+|---------|---------------|---------|---------------------|
+| $1k | +$19 | $1,711 | $2,317 |
+| $10k | +$190 | $17,108 | $23,172 |
+
+### Breakeven
+
+Fee roundtrip = 2 * 0.055% = 11bps. Trades с rate <11bps убыточны.
+С referral (-30%): breakeven = 7.7bps.
+
+### Ликвидация
+
+| Leverage | Ликвидация при | Risk за 3 сек hold |
+|----------|----------------|-------------------|
+| 10x | ~10% move | negligible |
+| 20x | ~5% move | low |
+| 25x | ~4% move | low (flash crash risk) |
+| 100x (BTC) | ~1% move | medium |
+
 ## Оптимальная конфигурация
 
 ```

@@ -2,6 +2,25 @@
 
 ## Лог
 
+### 2026-04-20 — Trading Platform v1 + Funding Capture Live
+
+**Funding Capture — первый полный автоматический цикл (20:00 UTC):**
+- 6 позиций: entry за 5 сек → funding credited через WS → exit за 0.3 сек
+- Hold time 2-3 секунды. 0 открытых позиций после. 0 ошибок.
+- При $1k/10x: +$9.08 per settlement, ~$817/мес
+- При $10k/max lev: +$190 per settlement, ~$17k/мес ($23k с referral)
+- Breakeven: 11bps (7.7bps с referral)
+
+**Exploit Research — 6 направлений проверено:**
+- Basis Trade: RED (APR 0.6-2% в bearish)
+- Token Unlocks: YELLOW (ARB -7...-15%, нужен платный API)
+- Launchpool: YELLOW (нужен парсер анонсов)
+- Liquidation Cascades: ORANGE (directional risk)
+- Fee Rebate Mining: ORANGE ($10-50/day, отдельная MM система)
+- Referral Rebate: GREEN (free -30% fees при scale up)
+
+**Screener переведён на Bybit + dead coin filter (PLA/USDT bug fixed)**
+
 ### 2026-04-20 — Trading Platform v1: Engine + Redis + Telegram + Docker
 
 **Trading Engine:**
