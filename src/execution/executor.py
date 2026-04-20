@@ -98,17 +98,17 @@ class ExecutionManager:
                      leverage=leverage,
                      funding_bps=funding_bps)
 
-        # Market order entry
+        # Market order entry — use raw ccxt to avoid _parse_order issues
         t0 = asyncio.get_event_loop().time()
-        order = await self._exchange.create_order(
+        raw = await self._exchange.client.create_order(
             symbol=signal.symbol,
-            side=side,
-            order_type=OrderType.MARKET,
-            amount=qty,
+            type="market",
+            side=side.value,
+            amount=float(qty),
         )
         latency_ms = (asyncio.get_event_loop().time() - t0) * 1000
 
-        entry_price = order.average or order.price or Decimal("0")
+        entry_price = Decimal(str(raw.get("average") or raw.get("price") or 0))
         pos = LivePosition(
             symbol=signal.symbol,
             side=signal.side.value,
@@ -143,19 +143,20 @@ class ExecutionManager:
         await asyncio.sleep(delay)
 
         logger.info("exec_funding_exit_executing", symbol=symbol)
-        close_side = OrderSide.SELL if entry_side == OrderSide.BUY else OrderSide.BUY
+        close_side = "sell" if entry_side == OrderSide.BUY else "buy"
         try:
             t0 = asyncio.get_event_loop().time()
-            order = await self._exchange.create_order(
+            # Use raw ccxt client to avoid _parse_order Enum issues
+            raw = await self._exchange.client.create_order(
                 symbol=symbol,
+                type="market",
                 side=close_side,
-                order_type=OrderType.MARKET,
-                amount=qty,
-                reduceOnly=True,
+                amount=float(qty),
+                params={"reduceOnly": True},
             )
             latency_ms = (asyncio.get_event_loop().time() - t0) * 1000
 
-            exit_price = order.average or order.price or Decimal("0")
+            exit_price = raw.get("average") or raw.get("price") or "?"
             pos = self._positions.close(symbol)
 
             await self._event_bus.publish(Event(

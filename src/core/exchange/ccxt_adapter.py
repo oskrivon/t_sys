@@ -461,7 +461,7 @@ class CCXTAdapter(ExchangeAdapter):
             )
             if data.get("timestamp")
             else datetime.now(timezone.utc),
-            type=OrderType(data["type"]) if data.get("type") else OrderType.LIMIT,
+            type=OrderType(data["type"].lower()) if data.get("type") and data["type"].lower() in OrderType._value2member_map_ else OrderType.MARKET,
             side=OrderSide(data["side"]),
             status=status_map.get(data.get("status", ""), OrderStatus.PENDING),
             price=Decimal(str(data["price"])) if data.get("price") else None,
