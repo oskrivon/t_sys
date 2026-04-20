@@ -2,7 +2,8 @@
 
 ## Активные исследования
 
-- **Miro Strategy + Claude Vision** — **MAIN TRACK**. Screener + Claude Vision filter. Score>=7 → 75% WR на 36 trades (100 sample). Next: screener build (2026-04-18)
+- **Funding Capture HF** — **ACTIVE**. Live trading engine на Bybit. [Детали](FUNDING_CAPTURE_RESEARCH.md)
+- **Miro Strategy + Claude Vision** — **MAIN TRACK**. Screener + Claude Vision filter. Score>=7 → 75% WR на 36 trades (100 sample)
 - [Арбитраж — финальный отчёт](../data/reports/arbitrage_final_report.html) — DEAD: 6 треков проверено, все мертвы
 - [Funding rate arbitrage](FUNDING_ARB_RESEARCH.md) — passive yield 3.5-5% APR. Backlog.
 - [Cross-exchange арб](ARBITRAGE_RESEARCH.md) — Этапы 1+2 завершены, дальнейшая работа отложена в tail

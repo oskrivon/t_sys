@@ -124,6 +124,8 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 
 ## Backlog
 
+- Funding dump trade — short 5 мин после settlement: +0.15% net, WR 57%. Спички на $15, $315/мес на $1k. Реализовать при scale up.
+- Funding spot hedge — buy spot + short perp при >31bps: 100% WR, $15/мес на $100. Для крупных позиций на volatile coins.
 - Funding passive yield — 3.5-5% APR на idle capital (запустить когда есть капитал на биржах)
 - Cross-exchange с colocation — ~20% APR, нужна инфра $200/мес (Phase 5, tail)
 - ML модели для предсказания — после того как базовая стратегия работает
