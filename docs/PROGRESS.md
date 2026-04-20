@@ -2,17 +2,31 @@
 
 ## Лог
 
-### 2026-04-20 — Trading Engine v1: WebSocket + Funding Capture
+### 2026-04-20 — Trading Platform v1: Engine + Redis + Telegram + Docker
 
-- **TradingEngine daemon** — single-process asyncio, persistent event loop
-- **EventBus** — typed async pub/sub (asyncio.Queue), zero-serialization
-- **BybitWebSocket** — V5 public (tickers + funding) + private (auth + executions), auto-reconnect с exponential backoff
-- **FundingCaptureStrategy** — WS-driven, monitors 20 монет, enters 10s before settlement при |rate| > threshold
-- **ExecutionManager** — market orders, funding entry/exit timing, TP/SL для event-driven, rebalance для systematic
-- **PositionTracker** — in-memory + exchange sync
-- **StateManager** — SQLite persistence (positions, trade log, KV)
-- **StrategyScheduler** — 4h/daily aligned timers для Miro/VolumeRanking
-- Протестировано на сервере (<SERVER_HOST>): WS подключение, auth, тикеры, funding rates — всё OK
+**Trading Engine:**
+- TradingEngine daemon — single-process asyncio, persistent event loop
+- EventBus — typed async pub/sub (asyncio.Queue)
+- BybitWebSocket — V5 public (tickers+funding) + private (auth+executions), auto-reconnect
+- FundingCaptureStrategy — REST scan 573 пар → WS мониторинг hot ~35 → entry 10s before settlement
+- ExecutionManager — market orders, funding entry/exit, TP/SL, rebalance
+- PositionTracker, StateManager (SQLite), StrategyScheduler (4h/daily)
+- Strategy config из `config/strategies.yml`
+
+**Первый live тест (12:00 UTC settlement):**
+- 13 монет scheduled, 9 позиций открыто реально
+- Найдены баги: duplicate signals (WS ticks ~100ms), exit не отработал
+- Оба бага пофикшены: dedup через `_traded_this_round` + execution lock
+- PnL estimate (clean): +$0.037 (+0.25% на $15, ~$3.35/мес)
+
+**Platform Architecture (Redis pub/sub):**
+- RedisBus — async pub/sub wrapper, 5 каналов (signals, commands, notifications, events)
+- Signal schemas — Pydantic models (ScreenerSignal, FundingSignal, TradeEvent, EngineCommand)
+- Paper Trading Service — standalone daemon, subscribes to Redis signals
+- Screener decoupled — публикует в Redis, PaperTrader как fallback
+- Telegram Bot — bidirectional: /status, /positions, /start, /stop, /paper, /help + Redis forwarding
+- Engine → Redis: commands subscription, trade events publish, status to KV
+- Unified Docker Compose — 6 сервисов: redis, screener×2, paper-trading, engine, telegram-bot
 - Bybit API: тестовый трейд SUPER (open 612ms, close 203ms, round-trip 815ms)
 - Архитектура расширяема: Strategy ABC + EventBus позволяют добавлять стратегии без изменения ядра
 

@@ -88,10 +88,19 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 - [ ] Paper trading validation: 4 недели все 3 стратегии параллельно
 - [ ] Vision интеграция в live screener (score>=8 → trade, <5 → skip)
 - [ ] Volume Ranking daily rebalance бот (futures, maker orders)
-- [ ] Funding capture бот:
-      Фаза 1 (1 нед): WebSocket мониторинг funding events, paper simulation >10bps
-      Фаза 2 (1-2 нед): micro-live $100-200, leverage 5x, BTC/ETH/SOL only
+- [x] Funding capture бот:
+      Фаза 1: ✅ WS мониторинг 573 пар, dynamic watchlist, entry/exit automation
+      Фаза 1.5: ✅ Первый live тест 12:00 UTC — 9 позиций, баги найдены и пофикшены
+      Фаза 2 (текущая): micro-live $15, отладка exit timing, сбор статистики
       Фаза 3: scale up до 10-20 монет, 10x, target $50-100/day
+- [x] Trading Platform architecture:
+      ✅ Redis pub/sub (5 каналов), Signal schemas (Pydantic)
+      ✅ Paper Trading Service (standalone, Redis subscriber)
+      ✅ Screener decoupled (Redis publish, PaperTrader fallback)
+      ✅ Telegram Bot (commands + Redis forwarding)
+      ✅ Engine Redis integration (commands, events, status KV)
+      ✅ Strategy config from YAML (config/strategies.yml)
+      ✅ Docker Compose (6 сервисов)
 - [ ] Risk manager: per-strategy allocation, conflict resolution, drawdown circuit breaker
 - [ ] Live execution через CCXT (spot для Miro, futures для VR + funding)
 - [ ] Начать с $2-5k, scale up при positive results

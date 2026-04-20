@@ -24,9 +24,13 @@ src/
 │   │   ├── base.py          # ✅ Абстрактный ExchangeAdapter
 │   │   ├── ccxt_adapter.py  # ✅ Реализация через CCXT
 │   │   └── manager.py       # ✅ ExchangeManager (multi-exchange)
-│   ├── websocket/           # 🔲 WS менеджеры для real-time
+│   ├── redis_bus.py         # ✅ Redis pub/sub межсервисная шина
+│   ├── websocket/           # ✅ WS менеджеры для real-time
+│   │   ├── base.py          # ✅ WebSocketFeed ABC
+│   │   └── bybit_ws.py      # ✅ Bybit V5 (public + private, auto-reconnect)
 │   └── models/              # ✅ Pydantic модели
-│       └── base.py          # ✅ Ticker, Candle, Order, Trade, Balance, etc.
+│       ├── base.py          # ✅ Ticker, Candle, Order, Trade, Balance, etc.
+│       └── signals.py       # ✅ ScreenerSignal, FundingSignal, TradeEvent, EngineCommand
 ├── data/                    # Слой данных
 │   ├── collectors/          # 🔲 Асинхронные сборщики
 │   ├── storage/             # 🔲 TimescaleDB, Redis адаптеры
@@ -42,15 +46,23 @@ src/
 ├── strategies/              # ✅ Multi-strategy layer (N стратегий)
 │   ├── base.py              # ✅ Strategy ABC, TradeSignal, TargetPosition
 │   ├── miro_strategy.py     # ✅ Miro S/R + ML + Vision (event-driven)
-│   └── volume_ranking.py    # ✅ Volume Ranking L/S (systematic daily)
+│   ├── volume_ranking.py    # ✅ Volume Ranking L/S (systematic daily)
+│   └── funding_capture.py   # ✅ Funding rate capture (WS-driven, >10bps)
 ├── portfolio/               # ✅ Portfolio management
 │   └── manager.py           # ✅ PortfolioManager: allocation, risk, conflicts
+├── engine/                  # ✅ Trading engine daemon
+│   ├── daemon.py            # ✅ TradingEngine: main daemon, TaskGroup
+│   ├── event_bus.py         # ✅ EventBus: typed async pub/sub
+│   ├── scheduler.py         # ✅ StrategyScheduler (4h/daily aligned)
+│   └── state.py             # ✅ StateManager (SQLite persistence)
 ├── paper_trading/           # ✅ Paper trading infrastructure
 │   ├── db.py                # ✅ SQLite CRUD for paper trades
 │   ├── tracker.py           # ✅ PaperTrader: record signals, check TP/SL
+│   ├── service.py           # ✅ Standalone paper trading service (Redis subscriber)
 │   └── stats.py             # ✅ Statistics: WR, PnL, PF, equity
-├── execution/               # Торговля
-│   ├── orders/              # 🔲 Order management system
+├── execution/               # ✅ Торговля
+│   ├── executor.py          # ✅ ExecutionManager: orders, TP/SL, funding exit
+│   ├── position_tracker.py  # ✅ PositionTracker: in-memory + exchange sync
 │   ├── risk/                # 🔲 Position sizing, limits
 │   └── arbitrage/           # 🔲 Cross-exchange арбитраж
 ├── screener/                # ✅ Real-time signal scanner
@@ -67,16 +79,24 @@ src/
 │   └── monitor/             # 🔲 Автоматический мониторинг
 └── api/                     # Интерфейсы
     ├── rest/                # 🔲 FastAPI endpoints
-    ├── telegram/            # ✅ Signal alert bot
-    │   ├── bot.py           # ✅ TelegramNotifier
+    ├── telegram/            # ✅ Telegram bot (bidirectional)
+    │   ├── bot.py           # ✅ TelegramNotifier (outbound alerts)
+    │   ├── service.py       # ✅ TelegramService (commands + Redis forwarding)
+    │   ├── commands.py      # ✅ Command handlers (/status, /positions, etc.)
     │   └── formatters.py    # ✅ Message formatting
     └── dashboard/           # 🔲 Web UI (позже)
 
 scripts/
+├── run_engine.py            # ✅ Trading engine daemon
 ├── run_screener.py          # ✅ Miro screener (4h loop)
+├── run_telegram.py          # ✅ Telegram bot service
+├── run_paper_trading.py     # ✅ Paper trading service
 ├── run_volume_ranking.py    # ✅ Volume Ranking daily rebalance
 ├── run_portfolio.py         # ✅ Multi-strategy runner
 ├── paper_trading.py         # ✅ Paper trading CLI (status/check/stats)
+
+config/
+└── strategies.yml           # ✅ Strategy config (what to trade, params)
 ├── daily_report.py          # ✅ Portfolio report (console + Telegram)
 ├── services/                # ✅ Windows Task Scheduler .bat wrappers
 └── research/                # ✅ 15+ backtest/research scripts
