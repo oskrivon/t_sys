@@ -122,22 +122,38 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 - [ ] FastAPI endpoints (screener API)
 - [ ] Telegram бот (Этап 2 — alerts + trade management)
 
-## Backlog
+## TODO — Exploit Research
 
-- Funding dump trade — short 5 мин после settlement: +0.15% net, WR 57%. Спички на $15, $315/мес на $1k. Реализовать при scale up.
-- Funding spot hedge — buy spot + short perp при >31bps: 100% WR, $15/мес на $100. Для крупных позиций на volatile coins.
-- Funding passive yield — 3.5-5% APR на idle capital (запустить когда есть капитал на биржах)
-- Cross-exchange с colocation — ~20% APR, нужна инфра $200/мес (Phase 5, tail)
+Фреймворк: "где деньги перемещаются предсказуемо?" Каждый exploit = gate research ($0), потом live тест если green.
+
+### Tier 1 — низкий effort, проверяемо данными
+
+- [ ] **Basis Trade (quarterly futures premium)** — short quarterly + long spot/perp. При экспирации цены сходятся механически. Est. 5-15% APR, zero risk. Проверить: текущий premium на BTC/ETH quarterly.
+- [ ] **Token Unlock Dumps** — vesting schedules публичны (TokenUnlocks.app). Short перед крупным unlock (>2% supply). Проверить: correlates ли unlock с dump на исторических данных.
+- [ ] **Referral Rebate** — настроить свой реферал на Bybit = -30% к fees. Бесплатно, 5 минут. При $1k notional × 7 trades/day = $35/мес экономии.
+
+### Tier 2 — нужен парсинг/инфра
+
+- [ ] **Launchpool Front-Run** — long staking token при анонсе launchpool. Предсказуемый pump. Нужен парсинг анонсов бирж (RSS/API/Telegram).
+- [ ] **Liquidation Cascade Capture** — мониторинг OI + funding extreme → кластер ликвидаций близко. При первом движении входим в направлении каскада. Нужна модель.
+- [ ] **Fee Rebate Mining (Market Making)** — maker rebate на illiquid парах. Limit buy @ bid + limit sell @ ask. Нужен MM algo.
+
+### Tier 3 — backlog/проверить данными
+
+- [ ] **Weekend Effect** — funding rates extreme в выходные? Проверить историю по дням недели.
+- [ ] **Cross-TF Funding** — 4h/1h coins дают 2-6x больше settlements. Уже частично делаем.
+- [ ] **Funding Dump Trade** — short 5 мин после settlement: +0.15% net, WR 57%. Спички на $15, $315/мес на $1k.
+- [ ] **Funding Spot Hedge** — buy spot + short perp при >31bps: 100% WR, $15/мес на $100.
+
+## Backlog — Прочее
+
+- Funding passive yield — 3.5-5% APR на idle capital
 - ML модели для предсказания — после того как базовая стратегия работает
 - Sentiment analysis (новости, соцсети)
 - Web dashboard
-- Triangular arb — вероятно мёртв как и остальной арб, low priority
-- DEX интеграция — мёртв для арбитража (slippage), но может пригодиться для execution
 - Rust core — отложен, bottleneck в стратегии а не в скорости
-- On-chain analytics — whale tracking, exchange flows, DEX volume. Другой тип edge (информационный), не совместим с текущей level-based стратегией. Требует Nansen/Glassnode ($100-300/мес) + новый стек. Рассматривать после live trading.
-- Copy trading / signal aggregation — не слепое копирование, а использование чужих сигналов как input для ML. Подписка на 2-3 копитрейдера (Bitget/Bybit) + проверка через наш ML/levels = двойное подтверждение. Нет исторических данных — только forward test. Лидерборд API закрыты.
-- Funding scalp (базовый) — DEAD для average funding. Но HF capture с leverage + extreme filter (>10bps) = +$160/мес на $1k. Реализовано в Этапе 4.
-- Exploit research — систематический поиск structural edges: token unlocks, liquidation cascades, basis trade, launchpool farming. Framework: "где деньги перемещаются предсказуемо?"
+- On-chain analytics — whale tracking, exchange flows, DEX volume
+- Copy trading / signal aggregation
 
 ### Почему арбитраж отложен
 
