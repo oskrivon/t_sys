@@ -135,7 +135,7 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 ### Tier 2 — нужен парсинг/инфра
 
 - [x] **Launchpool Front-Run** — YELLOW. Edge вероятен, но volume spikes — late signal. Нужен парсер анонсов бирж (Telegram/RSS). Data inconclusive (bearish рынок заглушает signal).
-- [x] **Liquidation Cascade Capture** — ORANGE. Это directional STRATEGY, не exploit. OI данные доступны (Bybit API), но нужен timing trigger + directional bet. Высокий risk. Отложить.
+- [x] **Liquidation Cascade Capture** — RED. Детектируемы (vol spike + price move), но не торгуемы: MFE +0.52% avg но reversal за 1-3 мин, все exit-стратегии убыточны (WR 33-56%, net negative). Cross-exchange propagation мгновенная (ms), нет arbitrage window. 9 trades за 7 дней — мало и шумно. Закрыто.
 - [x] **Fee Rebate Mining (MM)** — ORANGE. Bybit: 121 пар со spread >4bps, est $10-15/day. Binance: rebate -2.5bps (profit on any fill). Но это отдельная MM система — high effort.
 
 ### Tier 3 — backlog/проверить данными
