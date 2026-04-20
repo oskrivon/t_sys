@@ -128,9 +128,9 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 
 ### Tier 1 — низкий effort, проверяемо данными
 
-- [ ] **Basis Trade (quarterly futures premium)** — short quarterly + long spot/perp. При экспирации цены сходятся механически. Est. 5-15% APR, zero risk. Проверить: текущий premium на BTC/ETH quarterly.
-- [ ] **Token Unlock Dumps** — vesting schedules публичны (TokenUnlocks.app). Short перед крупным unlock (>2% supply). Проверить: correlates ли unlock с dump на исторических данных.
-- [ ] **Referral Rebate** — настроить свой реферал на Bybit = -30% к fees. Бесплатно, 5 минут. При $1k notional × 7 trades/day = $35/мес экономии.
+- [x] **Basis Trade** — RED. APR 0.6-2% в bearish рынке. Работает только в contango (bullish). Пересмотреть при смене рыночного режима.
+- [x] **Token Unlock Dumps** — YELLOW. ARB стабильно -7...-15% после unlock. Но точные даты тр��буют платный API ($50-100/мес). Ручной research 1x/мес + шорт перед крупными unlocks — feasible.
+- [ ] **Referral Rebate** — настроить свой реферал на Bybit = -30% к fees. Бесплатно, 5 минут.
 
 ### Tier 2 — нужен парсинг/инфра
 
