@@ -1,0 +1,127 @@
+# Trading Platform — all services
+# Usage: docker compose -f docker-compose.platform.yml up -d
+
+services:
+  # =============================================
+  # Infrastructure
+  # =============================================
+
+  redis:
+    image: redis:7-alpine
+    container_name: trading-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # =============================================
+  # Screeners
+  # =============================================
+
+  screener-4h:
+    build: .
+    container_name: miro-screener-4h
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      SCREENER_TIMEFRAME: "4h"
+      SCREENER_D1_MODE: "d1_only"
+      SCREENER_ML_THRESHOLD: "0.25"
+      SCREENER_MODEL_PATH: "data/models/miro_gb_d1.joblib"
+      SCREENER_STATE_FILE: "data/state/screener_4h.json"
+    depends_on:
+      redis: { condition: service_healthy }
+    volumes:
+      - ./data/models:/app/data/models:ro
+      - screener_state:/app/data/state
+    command: python scripts/run_screener.py
+    restart: unless-stopped
+
+  screener-1h:
+    build: .
+    container_name: miro-screener-1h
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      SCREENER_TIMEFRAME: "1h"
+      SCREENER_D1_MODE: "none"
+      SCREENER_LEVEL_LOOKBACK: "72"
+      SCREENER_LEVEL_TOLERANCE_PCT: "0.5"
+      SCREENER_RETEST_WINDOW: "6"
+      SCREENER_MIN_LEVEL_AGE: "6"
+      SCREENER_RR_RATIO: "2.0"
+      SCREENER_ML_THRESHOLD: "0.40"
+      SCREENER_MODEL_PATH: "data/models/miro_gb_1h_scalp.joblib"
+      SCREENER_STATE_FILE: "data/state/screener_1h.json"
+      SCREENER_CANDLE_CLOSE_DELAY_SEC: "15"
+    depends_on:
+      redis: { condition: service_healthy }
+    volumes:
+      - ./data/models:/app/data/models:ro
+      - screener_state:/app/data/state
+    command: python scripts/run_screener.py
+    restart: unless-stopped
+
+  # =============================================
+  # Paper Trading Service
+  # =============================================
+
+  paper-trading:
+    build: .
+    container_name: paper-trading
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis: { condition: service_healthy }
+    volumes:
+      - paper_data:/app/data
+    command: python scripts/run_paper_trading.py
+    restart: unless-stopped
+
+  # =============================================
+  # Trading Engine
+  # =============================================
+
+  engine:
+    build: .
+    container_name: trading-engine
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      ENGINE_CAPITAL: "15"
+      STRATEGIES_CONFIG: config/strategies.yml
+    depends_on:
+      redis: { condition: service_healthy }
+    volumes:
+      - engine_data:/app/data
+    command: python scripts/run_engine.py
+    restart: unless-stopped
+
+  # =============================================
+  # Telegram Bot
+  # =============================================
+
+  telegram-bot:
+    build: .
+    container_name: telegram-bot
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis: { condition: service_healthy }
+    command: python scripts/run_telegram.py
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  screener_state:
+  paper_data:
+  engine_data:

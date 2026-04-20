@@ -17,6 +17,42 @@ Credentials в `.env` (`SERVER_PASSWORD`).
 /root/trading/tmp/      # Временные скрипты и данные (не коммитятся)
 ```
 
+## Platform (Docker Compose)
+
+```bash
+# Запуск всех сервисов
+docker compose -f docker-compose.platform.yml up -d
+
+# Логи конкретного сервиса
+docker compose -f docker-compose.platform.yml logs -f engine
+
+# Перезапуск движка
+docker compose -f docker-compose.platform.yml restart engine
+
+# Стоп всего
+docker compose -f docker-compose.platform.yml down
+```
+
+### Сервисы
+
+| Сервис | Контейнер | Описание |
+|--------|-----------|----------|
+| redis | trading-redis | pub/sub + cache |
+| screener-4h | miro-screener-4h | Скринер 4h + D1 levels |
+| screener-1h | miro-screener-1h | Скринер 1h scalp |
+| paper-trading | paper-trading | Paper trades от всех сигналов |
+| engine | trading-engine | Торговый движок (funding capture) |
+| telegram-bot | telegram-bot | Управление + алерты |
+
+### Redis каналы
+
+| Канал | От → Кому | Описание |
+|-------|-----------|----------|
+| signals:screener | screener → paper, engine | Сигналы скринера |
+| commands:engine | telegram → engine | Команды управления |
+| notifications:telegram | все → telegram | Уведомления в TG |
+| events:trades | engine → paper, telegram | События сделок |
+
 ## Окружение
 
 - **Python:** 3.11+
