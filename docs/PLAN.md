@@ -145,6 +145,12 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 - [ ] **Funding Dump Trade** — short 5 мин после settlement: +0.15% net, WR 57%. Спички на $15, $315/мес на $1k.
 - [ ] **Funding Spot Hedge** — buy spot + short perp при >31bps: 100% WR, $15/мес на $100.
 
+## Backlog — Structural Exploits
+
+- **Token Unlock Shorts** — ARB стабильно -7...-15% после unlock за 3 месяца подряд. Предсказуемый механический поток (VC/team продают). Нужно: TokenUnlocks.app API ($50-100/мес) для точных дат + % supply. Ручной research 1x/мес viable. При $1k позиции: $70-150 за event. **Приоритет: HIGH при scale up.**
+- **Launchpool Front-Run** — long staking token (BNB/MNT) при анонсе launchpool. Buying pressure предсказуем. Нужно: парсер Binance/Bybit announcements (Telegram каналы, RSS). Effort: MEDIUM. **Приоритет: MEDIUM.**
+- **Binance Maker Rebate MM** — Binance платит -0.025% за maker fills. Любой fill = profit. Нужно: MM бот (order management, inventory risk). $10-50/day на $1-5k. Effort: HIGH (отдельная система). **Приоритет: LOW.**
+
 ## Backlog — Прочее
 
 - Funding passive yield — 3.5-5% APR на idle capital

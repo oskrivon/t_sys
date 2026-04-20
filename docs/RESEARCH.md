@@ -12,6 +12,24 @@
 
 ## Решения
 
+### [Structural Exploits — 6 направлений проверено] — 2026-04-20
+
+**Контекст:** систематический поиск structural edges помимо funding capture. Фреймворк: "где деньги перемещаются предсказуемо?" Проверено 6 направлений за 1 сессию.
+
+**Результаты:**
+- Basis Trade: **RED** — APR 0.6-2% в bearish рынке (нет premium)
+- Token Unlocks: **YELLOW** — ARB -7...-15% после каждого unlock. Стабильно 3/3 месяцев. Нужен платный API для дат.
+- Launchpool: **YELLOW** — edge вероятен, data inconclusive. Нужен парсер анонсов.
+- Liquidation Cascades: **ORANGE** — directional strategy, не exploit. OI данные есть.
+- Fee Rebate Mining: **ORANGE** — $10-50/day но отдельная MM система.
+- Referral Rebate: **GREEN** — бесплатные -30% fees при scale up.
+
+**Решение:** funding capture остаётся единственным working structural exploit. Token Unlocks и Launchpool в backlog как высокоприоритетные — token unlock -7% с высокой уверенностью = реальные деньги при scale.
+
+**Детали:** `docs/EXPLOITS_BRAINSTORM.md`
+
+---
+
 ### [Level Quality + Position Sizing — best result 14.3%] — 2026-04-19
 
 **Контекст:** поиск способов улучшить Miro d1_only + ML (13.3% baseline).
