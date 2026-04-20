@@ -136,7 +136,7 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 
 - [x] **Launchpool Front-Run** — YELLOW. Edge вероятен, но volume spikes — late signal. Нужен парсер анонсов бирж (Telegram/RSS). Data inconclusive (bearish рынок заглушает signal).
 - [x] **Liquidation Cascade Capture** — ORANGE. Это directional STRATEGY, не exploit. OI данные доступны (Bybit API), но нужен timing trigger + directional bet. Высокий risk. Отложить.
-- [ ] **Fee Rebate Mining (Market Making)** — maker rebate на illiquid парах. Limit buy @ bid + limit sell @ ask. Нужен MM algo.
+- [x] **Fee Rebate Mining (MM)** — ORANGE. Bybit: 121 пар со spread >4bps, est $10-15/day. Binance: rebate -2.5bps (profit on any fill). Но это отдельная MM система — high effort.
 
 ### Tier 3 — backlog/проверить данными
 
