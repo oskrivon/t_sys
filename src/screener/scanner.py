@@ -28,9 +28,20 @@ from .state import (
 )
 from .data_fetcher import fetch_all_candles
 from .coins_in_play import CoinsInPlayDetector
-from src.paper_trading.tracker import PaperTrader
 
 log = structlog.get_logger()
+
+# Optional imports — graceful fallback
+try:
+    from src.paper_trading.tracker import PaperTrader
+except ImportError:
+    PaperTrader = None
+
+try:
+    from src.core.redis_bus import RedisBus, CH_SIGNALS_SCREENER
+    from src.core.models.signals import ScreenerSignal, SignalType, SignalDirection
+except ImportError:
+    RedisBus = None
 
 
 def _level_near_d1(level: Level, d1_levels: list[Level], proximity_pct: float) -> bool:
@@ -51,12 +62,14 @@ class MiroScreener:
         ml_scorer=None,
         vision_scorer=None,
         notifier=None,
+        redis_bus=None,
     ):
         self.config = config
         self.exchange = exchange
         self.ml_scorer = ml_scorer
         self.vision_scorer = vision_scorer
         self.notifier = notifier
+        self.redis_bus = redis_bus
 
         self.coins_detector = CoinsInPlayDetector(
             base_symbols=config.base_symbols,
@@ -65,7 +78,8 @@ class MiroScreener:
         )
 
         self.state = load_state(config.state_file)
-        self.paper_trader = PaperTrader()
+        # Paper trader: only if Redis not available (local dev fallback)
+        self.paper_trader = PaperTrader() if PaperTrader and not redis_bus else None
 
     async def run_once(self) -> ScreenerResult:
         """Run a single scan across all coins."""
@@ -155,22 +169,52 @@ class MiroScreener:
                 self._print_signal(signal)
                 alerted += 1
 
-            # Record paper trade
-            try:
-                self.paper_trader.record_signal(signal)
-            except Exception as e:
-                log.error("paper_trade_record_error", symbol=signal.symbol, error=str(e))
+            # Publish signal to Redis (for paper trading service + engine)
+            if self.redis_bus and RedisBus:
+                try:
+                    redis_signal = ScreenerSignal(
+                        signal_type=SignalType(signal.signal_type.value),
+                        symbol=signal.symbol,
+                        direction=SignalDirection("long" if signal.is_long else "short"),
+                        timeframe=self.config.timeframe,
+                        entry_price=signal.entry_price,
+                        sl=signal.sl,
+                        tp=signal.tp,
+                        rr_ratio=signal.rr_ratio,
+                        level_price=signal.level.price,
+                        level_touches=signal.level.touches,
+                        level_score=signal.level.score,
+                        ml_score=signal.ml_score or 0.0,
+                        vision_score=signal.vision_score,
+                        volume_ratio=signal.volume_ratio or 0.0,
+                        source=f"screener-{self.config.timeframe}",
+                    )
+                    await self.redis_bus.publish(
+                        CH_SIGNALS_SCREENER,
+                        redis_signal.to_redis(),
+                        source=f"screener-{self.config.timeframe}",
+                    )
+                except Exception as e:
+                    log.error("redis_publish_error", symbol=signal.symbol, error=str(e))
+
+            # Fallback: record paper trade directly (local dev without Redis)
+            if self.paper_trader:
+                try:
+                    self.paper_trader.record_signal(signal)
+                except Exception as e:
+                    log.error("paper_trade_record_error", symbol=signal.symbol, error=str(e))
 
             self.state.add_alert_key(signal.symbol, signal.signal_type.value, ts_key)
 
-        # 6. Check open paper trades against current prices
-        try:
-            resolved = await self.paper_trader.check_open_trades(self.exchange)
-            if resolved:
-                log.info("paper_trades_resolved", count=len(resolved),
-                         trades=[f"{r['symbol']} {r['status']} {r['pnl_pct']:+.2f}%" for r in resolved])
-        except Exception as e:
-            log.error("paper_trade_check_error", error=str(e))
+        # 6. Check open paper trades (only if using local paper trader)
+        if self.paper_trader:
+            try:
+                resolved = await self.paper_trader.check_open_trades(self.exchange)
+                if resolved:
+                    log.info("paper_trades_resolved", count=len(resolved),
+                             trades=[f"{r['symbol']} {r['status']} {r['pnl_pct']:+.2f}%" for r in resolved])
+            except Exception as e:
+                log.error("paper_trade_check_error", error=str(e))
 
         # 7. Save state
         self.state.last_run_ts = now.isoformat()

@@ -74,6 +74,18 @@ async def main(args):
         else:
             log.warning("telegram_not_configured")
 
+    # Redis bus (optional — for publishing signals to paper trading service)
+    redis_bus = None
+    redis_url = os.getenv("REDIS_URL", "")
+    if redis_url:
+        try:
+            from src.core.redis_bus import RedisBus
+            redis_bus = RedisBus(redis_url)
+            await redis_bus.connect()
+            log.info("redis_bus_ready", url=redis_url)
+        except Exception as e:
+            log.warning("redis_bus_not_available", error=str(e))
+
     # Screener
     screener = MiroScreener(
         config=config,
@@ -81,6 +93,7 @@ async def main(args):
         ml_scorer=ml_scorer,
         vision_scorer=vision_scorer,
         notifier=notifier,
+        redis_bus=redis_bus,
     )
 
     try:

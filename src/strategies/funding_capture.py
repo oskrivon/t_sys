@@ -256,8 +256,8 @@ class FundingCaptureStrategy(Strategy):
             source=self.config.strategy_id,
         ))
 
-        # _traded_this_round already set at scheduling time
-        self._scheduled.pop(opp.symbol_raw, None)
+        # Keep in _scheduled to prevent any further scheduling
+        # (will be cleaned up on next settlement cycle via _traded_this_round)
         logger.info("funding_signal_emitted",
                      symbol=opp.symbol_raw,
                      rate_bps=abs(opp.funding_rate) * 10_000,
