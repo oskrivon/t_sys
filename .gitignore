@@ -50,6 +50,10 @@ logs/
 # Data (большие файлы)
 data/raw/
 data/cache/
+data/models/
+data/reports/
+data/logs/
+data/*.db
 *.parquet
 *.h5
 *.hdf5
@@ -58,3 +62,7 @@ data/cache/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Temp / scratch
+ts/
+nul

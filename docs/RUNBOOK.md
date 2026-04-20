@@ -1,10 +1,27 @@
 # Runbook
 
+## Сервер
+
+```
+Host:     <SERVER_HOST>
+User:     root
+SSH:      ssh root@<SERVER_HOST>
+```
+
+Credentials в `.env` (`SERVER_PASSWORD`).
+
+### Структура на сервере
+
+```
+/root/trading/          # Рабочая директория
+/root/trading/tmp/      # Временные скрипты и данные (не коммитятся)
+```
+
 ## Окружение
 
 - **Python:** 3.11+
 - **Database:** TimescaleDB (PostgreSQL 15+), Redis 7+
-- **OS:** Windows / Linux / macOS
+- **OS:** Windows (локально) / Linux (сервер)
 
 ## Установка
 

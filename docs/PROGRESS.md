@@ -2,6 +2,20 @@
 
 ## Лог
 
+### 2026-04-20 — Trading Engine v1: WebSocket + Funding Capture
+
+- **TradingEngine daemon** — single-process asyncio, persistent event loop
+- **EventBus** — typed async pub/sub (asyncio.Queue), zero-serialization
+- **BybitWebSocket** — V5 public (tickers + funding) + private (auth + executions), auto-reconnect с exponential backoff
+- **FundingCaptureStrategy** — WS-driven, monitors 20 монет, enters 10s before settlement при |rate| > threshold
+- **ExecutionManager** — market orders, funding entry/exit timing, TP/SL для event-driven, rebalance для systematic
+- **PositionTracker** — in-memory + exchange sync
+- **StateManager** — SQLite persistence (positions, trade log, KV)
+- **StrategyScheduler** — 4h/daily aligned timers для Miro/VolumeRanking
+- Протестировано на сервере (<SERVER_HOST>): WS подключение, auth, тикеры, funding rates — всё OK
+- Bybit API: тестовый трейд SUPER (open 612ms, close 203ms, round-trip 815ms)
+- Архитектура расширяема: Strategy ABC + EventBus позволяют добавлять стратегии без изменения ядра
+
 ### 2026-04-19 — Итоги сессии: от research к production
 
 **Что сделано за сессию:**

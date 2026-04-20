@@ -61,36 +61,53 @@ trading/
 │   ├── REFACTORING.md       # Планы рефакторинга
 │   └── archive/             # Архив документов
 ├── src/
-│   ├── core/                # Ядро системы
-│   │   ├── exchange/        # Интеграция с биржами (CCXT)
-│   │   ├── websocket/       # Real-time данные
-│   │   └── models/          # Общие модели данных
-│   ├── data/                # Слой данных
-│   │   ├── collectors/      # Сборщики данных
-│   │   ├── storage/         # TimescaleDB, Redis
-│   │   └── cache/           # Кэширование
-│   ├── strategy/            # Стратегии
-│   │   ├── backtester/      # Бэктестинг
-│   │   ├── patterns/        # Паттерны (из Miro и др.)
-│   │   └── signals/         # Генерация сигналов
-│   ├── execution/           # Исполнение
-│   │   ├── orders/          # Управление ордерами
-│   │   ├── risk/            # Риск-менеджмент
-│   │   └── arbitrage/       # Арбитражные стратегии
-│   ├── ai/                  # AI-анализ
-│   │   ├── analyzer/        # Claude/GPT анализ
-│   │   └── monitor/         # AI-мониторинг
-│   └── api/                 # API и интерфейсы
-│       ├── rest/            # FastAPI endpoints
-│       ├── telegram/        # Telegram бот
-│       └── dashboard/       # Web UI
+│   ├── core/                # Ядро: конфиг, модели
+│   │   ├── config.py        # Pydantic-settings конфиг
+│   │   ├── exchange/        # CCXT адаптер (base, manager)
+│   │   ├── models/          # Общие модели данных
+│   │   └── websocket/       # Real-time данные (placeholder)
+│   ├── data/                # Слой данных (placeholder)
+│   ├── strategy/            # Логика стратегий
+│   │   ├── levels.py        # S/R уровни, D1 multi-TF
+│   │   ├── signals.py       # Генерация сигналов
+│   │   ├── features.py      # Фичи для ML
+│   │   └── models.py        # Dataclass-ы стратегий
+│   ├── strategies/          # Конкретные стратегии
+│   │   ├── base.py          # Strategy ABC
+│   │   ├── miro_strategy.py # Miro (breakout + retest)
+│   │   └── volume_ranking.py# Volume Ranking L/S
+│   ├── ai/                  # AI-пайплайн
+│   │   ├── chart_generator.py # Генерация графиков
+│   │   ├── ml_scorer.py     # ML классификатор
+│   │   └── vision_scorer.py # Claude Vision скоринг
+│   ├── screener/            # Скринер монет
+│   │   ├── scanner.py       # Основной сканер
+│   │   ├── data_fetcher.py  # Загрузка данных
+│   │   ├── coins_in_play.py # Отбор монет
+│   │   └── state.py         # Состояние скринера
+│   ├── paper_trading/       # Paper trading
+│   │   ├── tracker.py       # Трекер сделок
+│   │   ├── db.py            # SQLite хранилище
+│   │   └── stats.py         # Статистика P&L
+│   ├── portfolio/           # Портфельный менеджер
+│   │   └── manager.py       # Мульти-стратегия
+│   ├── execution/           # Исполнение (placeholder)
+│   └── api/
+│       └── telegram/        # Telegram бот + алерты
+├── scripts/
+│   ├── paper_trading.py     # Запуск paper trading
+│   ├── daily_report.py      # Ежедневный отчёт
+│   └── research/            # Ресёрч-скрипты (~40 файлов)
+├── config/
+│   └── example.env          # Пример .env
 ├── tests/                   # Тесты
-├── scripts/                 # Утилиты и скрипты
-├── config/                  # Конфигурации
 └── data/                    # Данные (в .gitignore)
-    ├── raw/                 # Сырые данные
+    ├── raw/                 # Сырые данные, parquet
     ├── processed/           # Обработанные
-    └── cache/               # Кэш
+    ├── cache/               # Кэш
+    ├── models/              # Сохранённые ML-модели
+    ├── reports/             # Отчёты бэктестов
+    └── logs/                # Логи
 ```
 
 ## Приоритетные биржи

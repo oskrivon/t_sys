@@ -373,6 +373,27 @@ class CCXTAdapter(ExchangeAdapter):
         return [self._parse_order(o) for o in data]
 
     # =========================================================================
+    # Futures-specific
+    # =========================================================================
+
+    async def set_leverage(self, leverage: int, symbol: str) -> None:
+        """Set leverage for a futures symbol."""
+        try:
+            await self.client.set_leverage(leverage, symbol)
+        except ccxt.ExchangeError as e:
+            # "leverage not modified" is not an error
+            if "not modified" not in str(e):
+                raise
+
+    async def fetch_positions(self, symbols: Optional[list[str]] = None) -> list[dict]:
+        """Fetch open futures positions (raw CCXT format)."""
+        return await self.client.fetch_positions(symbols)
+
+    async def fetch_funding_rate(self, symbol: str) -> dict:
+        """Fetch current funding rate info (raw CCXT format)."""
+        return await self.client.fetch_funding_rate(symbol)
+
+    # =========================================================================
     # Parsers
     # =========================================================================
 
