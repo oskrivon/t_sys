@@ -63,11 +63,10 @@ def main():
         bybit_api_key=api_key,
         bybit_api_secret=api_secret,
         total_capital=args.capital,
+        redis_url=os.getenv("REDIS_URL", ""),
         telegram_token=os.getenv("TELEGRAM_BOT_TOKEN"),
         telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID"),
-        funding_enabled=True,
-        funding_threshold_bps=args.funding_threshold,
-        funding_leverage=args.funding_leverage,
+        strategies_config=os.getenv("STRATEGIES_CONFIG", "config/strategies.yml"),
     )
 
     asyncio.run(engine.start())
