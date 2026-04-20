@@ -145,6 +145,12 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 - [ ] **Funding Dump Trade** — short 5 мин после settlement: +0.15% net, WR 57%. Спички на $15, $315/мес на $1k.
 - [ ] **Funding Spot Hedge** — buy spot + short perp при >31bps: 100% WR, $15/мес на $100.
 
+## TODO — Multi-Exchange Expansion
+
+- [ ] **Binance funding capture** — fees 8bps vs 11bps Bybit. Maker rebate -2.5bps → breakeven 1.5bps. 15-65x глубже стаканы. Добавить после стабилизации Bybit engine.
+- [ ] Split $10k: Binance 50% + Bybit 40% + OKX 10%
+- [ ] Адаптировать engine для multi-exchange (exchange factory в daemon.py)
+
 ## Backlog — Structural Exploits
 
 - **Token Unlock Shorts** — ARB стабильно -7...-15% после unlock за 3 месяца подряд. Предсказуемый механический поток (VC/team продают). Нужно: TokenUnlocks.app API ($50-100/мес) для точных дат + % supply. Ручной research 1x/мес viable. При $1k позиции: $70-150 за event. **Приоритет: HIGH при scale up.**
