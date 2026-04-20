@@ -11,8 +11,8 @@ strategies:
       threshold_bps: 10.0
       scan_threshold_bps: 5.0
       leverage: 10
-      entry_seconds_before: 10
-      exit_seconds_after: 15
+      entry_seconds_before: 5
+      exit_seconds_after: 30  # timeout safety net; normally exits on execType=Funding WS event
       scan_interval_seconds: 300
 
   miro_breakout:

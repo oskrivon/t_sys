@@ -33,6 +33,7 @@ class ExecutionManager:
         self._notifier = notifier
         self._pending_exits: dict[str, asyncio.Task] = {}
         self._executing: set[str] = set()  # symbols currently being executed (lock)
+        self._funding_events: dict[str, asyncio.Event] = {}  # raw_symbol -> event for funding credited
 
     async def initialize(self) -> None:
         """Subscribe to events, sync positions from exchange."""
@@ -133,14 +134,30 @@ class ExecutionManager:
             f"Entry: {entry_price}, Latency: {latency_ms:.0f}ms"
         )
 
-        # Schedule exit after funding settlement
-        task = asyncio.create_task(self._funding_exit(signal.symbol, qty, side, exit_delay))
+        # Schedule exit: wait for funding credited event, then close
+        # Bybit sends execType=Funding via private WS when funding is applied
+        funding_event = asyncio.Event()
+        raw_symbol = signal.symbol.replace("/", "").replace(":USDT", "")
+        self._funding_events[raw_symbol] = funding_event
+
+        task = asyncio.create_task(
+            self._funding_exit(signal.symbol, raw_symbol, qty, side, funding_event, exit_delay)
+        )
         self._pending_exits[signal.symbol] = task
 
-    async def _funding_exit(self, symbol: str, qty: Decimal, entry_side: OrderSide, delay: int) -> None:
-        """Wait for funding, then close position."""
-        logger.info("exec_funding_exit_scheduled", symbol=symbol, delay_s=delay)
-        await asyncio.sleep(delay)
+    async def _funding_exit(
+        self, symbol: str, raw_symbol: str, qty: Decimal,
+        entry_side: OrderSide, funding_event: asyncio.Event, timeout: int,
+    ) -> None:
+        """Wait for funding credited event (or timeout), then close position."""
+        logger.info("exec_funding_exit_waiting", symbol=symbol, timeout_s=timeout)
+
+        # Wait for execType=Funding WS event, with timeout as safety net
+        try:
+            await asyncio.wait_for(funding_event.wait(), timeout=timeout)
+            logger.info("exec_funding_credited", symbol=symbol)
+        except asyncio.TimeoutError:
+            logger.warning("exec_funding_exit_timeout", symbol=symbol)
 
         logger.info("exec_funding_exit_executing", symbol=symbol)
         close_side = "sell" if entry_side == OrderSide.BUY else "buy"
@@ -174,6 +191,7 @@ class ExecutionManager:
             await self._notify(f"FUNDING EXIT FAILED: {symbol} — close manually!")
         finally:
             self._pending_exits.pop(symbol, None)
+            self._funding_events.pop(raw_symbol, None)
 
     # ------------------------------------------------------------------
     # Event-driven execution (Miro-type: entry + TP/SL)
@@ -301,8 +319,18 @@ class ExecutionManager:
         data = event.data
         topic = data.get("_topic", "")
 
-        if topic == "position":
-            # Position update from exchange — sync unrealized PnL
+        if topic == "execution":
+            exec_type = data.get("execType", "")
+            sym = data.get("symbol", "")
+
+            # Funding credited/debited — trigger exit for funding capture
+            if exec_type == "Funding" and sym in self._funding_events:
+                logger.info("ws_funding_credited", symbol=sym,
+                            execFee=data.get("execFee"),
+                            execQty=data.get("execQty"))
+                self._funding_events[sym].set()
+
+        elif topic == "position":
             sym = data.get("symbol", "")
             pos = self._positions.get(sym)
             if pos:
