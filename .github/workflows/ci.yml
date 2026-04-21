@@ -50,11 +50,4 @@ jobs:
           username: root
           key: ${{ secrets.SERVER_SSH_KEY }}
           command_timeout: 30s
-          script: |
-            PID=$(pgrep -f "run_engine.py" || true)
-            [ -n "$PID" ] && kill $PID && sleep 3
-            cd /root/trading
-            setsid python3 scripts/run_engine.py --capital 15 > data/logs/engine.log 2>&1 &
-            disown
-            sleep 5
-            pgrep -f "run_engine.py" && echo "Engine restarted OK" || echo "FAILED TO START"
+          script: bash /root/trading/scripts/restart_engine.sh
