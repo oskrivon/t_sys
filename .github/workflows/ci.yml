@@ -39,8 +39,9 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: root
           key: ${{ secrets.SERVER_SSH_KEY }}
-          command_timeout: 60s
+          command_timeout: 180s
           script: |
             cd /root/trading
             git pull origin master
-            bash scripts/restart_engine.sh
+            docker compose -f docker-compose.platform.yml up -d --build --no-deps --no-recreate redis
+            docker compose -f docker-compose.platform.yml up -d --build --no-deps engine

@@ -94,14 +94,13 @@ services:
     build: .
     container_name: trading-engine
     env_file: .env
+    network_mode: host
     environment:
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://localhost:6379/0
       ENGINE_CAPITAL: "15"
       STRATEGIES_CONFIG: config/strategies.yml
-    depends_on:
-      redis: { condition: service_healthy }
     volumes:
-      - engine_data:/app/data
+      - ./data:/app/data
     command: python scripts/run_engine.py
     restart: unless-stopped
 
