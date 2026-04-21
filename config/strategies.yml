@@ -8,12 +8,14 @@ strategies:
     allocation_pct: 10.0
     max_positions: 20
     params:
-      threshold_bps: 10.0
-      scan_threshold_bps: 5.0
+      threshold_bps: 15.0         # optimal: 100% WR at 5.7 trades/day (backtest 81d)
+      scan_threshold_bps: 10.0    # pre-filter for WS watchlist
       leverage: 10
-      entry_seconds_before: 5
-      exit_seconds_after: 30  # timeout safety net; normally exits on execType=Funding WS event
+      entry_seconds_before: 10    # precompute window; order fires at T-2s
+      exit_seconds_after: 30      # timeout safety net; normally exits on execType=Funding WS event
       scan_interval_seconds: 300
+      min_volume_24h: 5000000     # $5M — filter out illiquid shitcoins
+      target_notional: 25.0       # $25 per position
 
   miro_breakout:
     enabled: false

@@ -122,10 +122,11 @@ class TradingEngine:
         await self.ws.subscribe_executions()
         logger.info("ws_subscribed", symbols=len(all_symbols))
 
-        # Give funding strategy WS ref
+        # Give funding strategy WS + exchange refs for fast-path
         funding = self._strategies.get("funding_capture")
         if funding and isinstance(funding, FundingCaptureStrategy):
             funding.set_ws(self.ws)
+            funding._exchange_ref = self.exchange
 
         # 9. Scheduler for non-WS strategies
         scheduled = {k: v for k, v in self._strategies.items()

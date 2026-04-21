@@ -29,14 +29,32 @@ sys.path.insert(0, str(ROOT))
 from dotenv import load_dotenv
 load_dotenv(ROOT / ".env")
 
+import logging
+from logging.handlers import RotatingFileHandler
 import structlog
+
+log_dir = ROOT / "data" / "logs"
+log_dir.mkdir(parents=True, exist_ok=True)
+file_handler = RotatingFileHandler(
+    log_dir / "engine.log", maxBytes=10_000_000, backupCount=5, encoding="utf-8",
+)
+file_handler.setLevel(logging.INFO)
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+
+logging.basicConfig(
+    format="%(message)s",
+    level=logging.INFO,
+    handlers=[console_handler, file_handler],
+)
 
 structlog.configure(
     processors=[
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.add_log_level,
-        structlog.dev.ConsoleRenderer(),
+        structlog.dev.ConsoleRenderer(colors=False),
     ],
+    logger_factory=structlog.stdlib.LoggerFactory(),
 )
 
 from src.engine.daemon import TradingEngine
