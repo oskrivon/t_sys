@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run tests
+        run: pytest tests/ -v --tb=short --timeout=30
+
+      - name: Coverage report
+        run: pytest tests/ --cov=src --cov-report=term-missing --cov-fail-under=30
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: root
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /root/trading
+            # Backup current
+            cp -r src src.bak
+            cp config/strategies.yml config/strategies.yml.bak
+            # Pull new code
+            git fetch origin && git reset --hard origin/master
+            # Restart engine
+            PID=$(pgrep -f "run_engine.py" || true)
+            if [ -n "$PID" ]; then
+              kill $PID
+              sleep 3
+            fi
+            nohup python3 scripts/run_engine.py --capital 15 > data/logs/engine.log 2>&1 &
+            sleep 5
+            # Verify it started
+            pgrep -f "run_engine.py" && echo "Engine restarted OK" || echo "FAILED TO START"

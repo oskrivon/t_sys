@@ -34,6 +34,11 @@ class ExecutionManager:
         self._pending_exits: dict[str, asyncio.Task] = {}
         self._executing: set[str] = set()  # symbols currently being executed (lock)
         self._funding_events: dict[str, asyncio.Event] = {}  # raw_symbol -> event for funding credited
+        # Circuit breaker: pause trading after consecutive failures
+        self._consecutive_failures: int = 0
+        self._circuit_open: bool = False
+        self._max_failures: int = 3
+        self._circuit_cooldown: int = 300  # 5 min
 
     async def initialize(self) -> None:
         """Subscribe to events, sync positions from exchange."""
@@ -52,6 +57,11 @@ class ExecutionManager:
         if not isinstance(signal, TradeSignal):
             return
 
+        # Circuit breaker: skip all signals while open
+        if self._circuit_open:
+            logger.warning("circuit_breaker_open", symbol=signal.symbol)
+            return
+
         # Prevent duplicate execution: check both position and in-flight lock
         if self._positions.has_position(signal.symbol) or signal.symbol in self._executing:
             return
@@ -62,11 +72,22 @@ class ExecutionManager:
                 await self._execute_funding_capture(signal)
             else:
                 await self._execute_event_driven(signal)
+            # Success — reset failure counter
+            self._consecutive_failures = 0
         except Exception:
             logger.exception("exec_order_failed",
                              symbol=signal.symbol,
                              strategy=signal.strategy_id)
             await self._notify(f"ORDER FAILED: {signal.symbol} ({signal.strategy_id})")
+            self._consecutive_failures += 1
+            if self._consecutive_failures >= self._max_failures:
+                self._circuit_open = True
+                logger.error("circuit_breaker_triggered",
+                             failures=self._consecutive_failures)
+                await self._notify(
+                    f"CIRCUIT BREAKER: {self._consecutive_failures} consecutive failures, "
+                    f"pausing {self._circuit_cooldown}s")
+                asyncio.create_task(self._reset_circuit())
 
     # ------------------------------------------------------------------
     # Funding capture execution
@@ -85,12 +106,17 @@ class ExecutionManager:
         exit_delay = signal.metadata.get("exit_after_seconds", 15)
         funding_bps = signal.metadata.get("funding_rate_bps", 0)
 
-        # Set leverage
-        await self._exchange.set_leverage(leverage, signal.symbol)
-
-        # Compute qty from market info
         side = OrderSide.BUY if signal.side == Side.LONG else OrderSide.SELL
-        qty = await self._compute_min_qty(signal.symbol)
+
+        # Fast path: use pre-computed qty (leverage already set by strategy)
+        precomputed_qty = signal.metadata.get("_precomputed_qty")
+        if precomputed_qty and signal.metadata.get("_leverage_set"):
+            qty = Decimal(str(precomputed_qty))
+        else:
+            # Slow fallback
+            await self._exchange.set_leverage(leverage, signal.symbol)
+            target_notional = signal.metadata.get("target_notional", 0)
+            qty = await self._compute_qty(signal.symbol, target_notional)
 
         logger.info("exec_funding_entry",
                      symbol=signal.symbol,
@@ -201,7 +227,7 @@ class ExecutionManager:
         side = OrderSide.BUY if signal.side == Side.LONG else OrderSide.SELL
         close_side = OrderSide.SELL if side == OrderSide.BUY else OrderSide.BUY
 
-        qty = await self._compute_min_qty(signal.symbol)
+        qty = await self._compute_qty(signal.symbol)
 
         # Market entry
         t0 = asyncio.get_event_loop().time()
@@ -285,7 +311,7 @@ class ExecutionManager:
         for sym, target in target_map.items():
             if sym not in current_map:
                 side = OrderSide.BUY if target.side == Side.LONG else OrderSide.SELL
-                qty = await self._compute_min_qty(sym)
+                qty = await self._compute_qty(sym)
                 await self._exchange.create_order(
                     symbol=sym,
                     side=side,
@@ -308,10 +334,30 @@ class ExecutionManager:
     # Helpers
     # ------------------------------------------------------------------
 
-    async def _compute_min_qty(self, symbol: str) -> Decimal:
-        """Get minimum order quantity for a symbol."""
+    TAKER_FEE: float = 0.00055  # Bybit VIP0 taker fee per side
+
+    async def _compute_qty(self, symbol: str, target_notional: float = 0) -> Decimal:
+        """Compute order quantity from target_notional, accounting for fees.
+
+        Subtracts round-trip fees from notional so actual cost stays within budget.
+        Falls back to exchange minimum quantity if no target given.
+        """
         market = self._exchange.client.market(symbol)
-        min_qty = market.get("limits", {}).get("amount", {}).get("min", 1)
+        min_qty = float(market.get("limits", {}).get("amount", {}).get("min", 1))
+        qty_step = float(market.get("precision", {}).get("amount", min_qty))
+
+        if target_notional > 0:
+            ticker = await self._exchange.client.fetch_ticker(symbol)
+            price = float(ticker.get("last") or ticker.get("close") or 0)
+            if price > 0:
+                # Subtract RT fees so position + fees fit within target
+                effective = target_notional * (1 - self.TAKER_FEE * 2)
+                raw_qty = effective / price
+                if qty_step > 0:
+                    raw_qty = int(raw_qty / qty_step) * qty_step
+                qty = max(raw_qty, min_qty)
+                return Decimal(str(qty))
+
         return Decimal(str(min_qty))
 
     async def _on_order_update(self, event: Event) -> None:
@@ -364,6 +410,14 @@ class ExecutionManager:
             logger.info("positions_synced", count=self._positions.count)
         except Exception:
             logger.exception("position_sync_failed")
+
+    async def _reset_circuit(self) -> None:
+        """Re-enable trading after cooldown period."""
+        await asyncio.sleep(self._circuit_cooldown)
+        self._circuit_open = False
+        self._consecutive_failures = 0
+        logger.info("circuit_breaker_reset")
+        await self._notify("Circuit breaker reset — trading resumed")
 
     async def cancel_pending_exits(self) -> None:
         """Cancel all pending funding exit tasks (for shutdown)."""

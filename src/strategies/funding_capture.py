@@ -61,6 +61,7 @@ class FundingCaptureStrategy(Strategy):
         self._scheduled: dict[str, asyncio.Task] = {}
         self._traded_this_round: set[str] = set()
         self._scan_task: Optional[asyncio.Task] = None
+        self._min_volume_24h: float = config.params.get("min_volume_24h", 5_000_000)
         self._last_scan_results: list[dict] = []
 
     def set_ws(self, ws) -> None:
@@ -110,6 +111,9 @@ class FundingCaptureStrategy(Strategy):
                 fr = t.get("info", {}).get("fundingRate")
                 if not fr:
                     continue
+                vol_24h = float(t.get("quoteVolume") or 0)
+                if vol_24h < self._min_volume_24h:
+                    continue
                 rate = abs(float(fr))
                 if rate >= self._scan_threshold_rate:
                     raw = sym.replace("/", "").replace(":USDT", "")
@@ -118,6 +122,7 @@ class FundingCaptureStrategy(Strategy):
                         "symbol": raw,
                         "rate": float(fr),
                         "rate_bps": rate * 10_000,
+                        "volume_24h": vol_24h,
                     })
 
             scan_results.sort(key=lambda x: x["rate_bps"], reverse=True)
