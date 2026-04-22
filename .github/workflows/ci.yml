@@ -26,10 +26,41 @@ jobs:
       - name: Coverage report
         run: pytest tests/ --cov=src --cov-report=term-missing --cov-fail-under=30
 
-  deploy:
-    needs: test
+  changes:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    outputs:
+      engine: ${{ steps.filter.outputs.engine }}
+      screeners: ${{ steps.filter.outputs.screeners }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - id: filter
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1 HEAD)
+          echo "Changed files:"
+          echo "$CHANGED"
+
+          # Engine: core, execution, strategies, config, Dockerfile
+          if echo "$CHANGED" | grep -qE '^(src/core/|src/execution/|src/strategies/|config/|Dockerfile|pyproject.toml)'; then
+            echo "engine=true" >> $GITHUB_OUTPUT
+          else
+            echo "engine=false" >> $GITHUB_OUTPUT
+          fi
+
+          # Screeners: screener, strategy (signals/levels/features), ai
+          if echo "$CHANGED" | grep -qE '^(src/screener/|src/strategy/|src/ai/|config/|Dockerfile|pyproject.toml)'; then
+            echo "screeners=true" >> $GITHUB_OUTPUT
+          else
+            echo "screeners=false" >> $GITHUB_OUTPUT
+          fi
+
+  deploy:
+    needs: [test, changes]
+    runs-on: ubuntu-latest
+    if: needs.changes.outputs.engine == 'true' || needs.changes.outputs.screeners == 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -43,4 +74,13 @@ jobs:
           script: |
             cd /root/trading
             git pull origin master
-            docker compose -f docker-compose.platform.yml up -d --build --no-deps engine screener-4h screener-1h
+            SERVICES=""
+            if [ "${{ needs.changes.outputs.engine }}" = "true" ]; then
+              SERVICES="$SERVICES engine"
+            fi
+            if [ "${{ needs.changes.outputs.screeners }}" = "true" ]; then
+              SERVICES="$SERVICES screener-4h screener-1h"
+            fi
+            if [ -n "$SERVICES" ]; then
+              docker compose -f docker-compose.platform.yml up -d --build --no-deps $SERVICES
+            fi
