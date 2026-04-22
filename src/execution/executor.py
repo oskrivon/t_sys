@@ -26,11 +26,13 @@ class ExecutionManager:
         event_bus: EventBus,
         positions: PositionTracker,
         notifier=None,
+        state=None,
     ) -> None:
         self._exchange = exchange
         self._event_bus = event_bus
         self._positions = positions
         self._notifier = notifier
+        self._state = state
         self._pending_exits: dict[str, asyncio.Task] = {}
         self._executing: set[str] = set()  # symbols currently being executed (lock)
         self._funding_events: dict[str, asyncio.Event] = {}  # raw_symbol -> event for funding credited
@@ -147,6 +149,15 @@ class ExecutionManager:
         )
         self._positions.open(pos)
 
+        if self._state:
+            self._state.log_trade(
+                symbol=signal.symbol, strategy_id=signal.strategy_id,
+                side=signal.side.value, action="open",
+                price=str(entry_price), qty=str(qty),
+                metadata={"funding_bps": funding_bps, "leverage": leverage,
+                           "latency_ms": round(latency_ms, 1)},
+            )
+
         await self._event_bus.publish(Event(
             type=EventType.POSITION_OPENED,
             data={"symbol": signal.symbol, "strategy": signal.strategy_id,
@@ -201,6 +212,26 @@ class ExecutionManager:
 
             exit_price = raw.get("average") or raw.get("price") or "?"
             pos = self._positions.close(symbol)
+
+            if self._state and pos:
+                entry_p = float(pos.entry_price) if pos.entry_price else 0
+                exit_p = float(exit_price) if exit_price != "?" else 0
+                if entry_p > 0 and exit_p > 0:
+                    if pos.side == "long":
+                        pnl_pct = (exit_p - entry_p) / entry_p * 100
+                    else:
+                        pnl_pct = (entry_p - exit_p) / entry_p * 100
+                else:
+                    pnl_pct = 0.0
+                self._state.log_trade(
+                    symbol=symbol, strategy_id=pos.strategy_id or "funding_capture",
+                    side=pos.side or "?", action="close",
+                    price=str(exit_price), qty=str(pos.qty),
+                    pnl=f"{pnl_pct:.4f}%",
+                    metadata={"entry_price": str(pos.entry_price),
+                              "funding_bps": pos.metadata.get("funding_rate_bps", 0),
+                              "latency_ms": round(latency_ms, 1)},
+                )
 
             await self._event_bus.publish(Event(
                 type=EventType.POSITION_CLOSED,
