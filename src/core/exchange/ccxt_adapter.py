@@ -377,7 +377,11 @@ class CCXTAdapter(ExchangeAdapter):
     # =========================================================================
 
     async def set_leverage(self, leverage: int, symbol: str) -> None:
-        """Set leverage for a futures symbol."""
+        """Set leverage for a futures symbol, clamped to exchange max."""
+        market = self.client.market(symbol)
+        max_lev = market.get("limits", {}).get("leverage", {}).get("max")
+        if max_lev and leverage > max_lev:
+            leverage = int(max_lev)
         try:
             await self.client.set_leverage(leverage, symbol)
         except ccxt.ExchangeError as e:
