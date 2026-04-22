@@ -12,6 +12,20 @@
 
 ## Решения
 
+### [7 Funding Exploits — все RED кроме текущего capture] — 2026-04-22
+
+**Контекст:** систематическая проверка 7 exploit-идей на уровне механик бирж. Все протестированы на 10 символах, 6 мес, единый cost model (Bybit futures ~16 bps/trade). Использован новый `src/backtest/` модуль.
+
+**Результаты:** 0 из 7 показали надёжный structural edge на major монетах. S6 (mean reversion, Sharpe 1.53) оказался directional long bias — все 144 трейда LONG, Feb -35%. S5 (settlement arb) WR=0%. Остальные — отрицательная или нулевая expectancy.
+
+**Root cause:** BTC имел 0 событий >2bps за 6 мес. Major coins = efficient market для funding. Edge живёт на micro-cap (15-200+ bps rates) = то что engine уже делает.
+
+**Решение:** funding capture на мелких монетах остаётся единственным working structural exploit. Следующий шаг — scale up капитала и добавление Binance.
+
+**Скрипт:** `scripts/research/exploit_7_strategies.py`, `scripts/tmp/run_7_exploits.py`
+
+---
+
 ### [Structural Exploits — 6 направлений проверено] — 2026-04-20
 
 **Контекст:** систематический поиск structural edges помимо funding capture. Фреймворк: "где деньги перемещаются предсказуемо?" Проверено 6 направлений за 1 сессию.

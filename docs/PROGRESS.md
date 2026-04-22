@@ -2,6 +2,39 @@
 
 ## Лог
 
+### 2026-04-22 — Bugfixes + Universal Backtest Module + 7 Exploit Research
+
+**Bugfixes deployed:**
+- Engine: `set_leverage` clamp to exchange max (SIREN/XION ORDER FAILED fix)
+- Screeners: `df.index` -> `df["ts"]` crash fix (both screeners dead 38h)
+- CI/CD: screeners added to deploy, path-based filtering (engine not restarted on research changes)
+
+**Universal Backtest Module (`src/backtest/`):**
+- `models.py`: Trade, CostBreakdown dataclasses
+- `cost.py`: pluggable pipeline (TakerFee, Slippage, Spread, FundingDuringHold, BorrowCost)
+- `presets.py`: bybit_futures(), binance_futures() with real fee rates
+- `metrics.py`: compute_metrics() -> WR, PF, Sharpe, DD, equity curve, cost breakdown
+- `runner.py`: CandleStrategy, EventStrategy, PortfolioStrategy adapters
+- Bybit futures total cost: ~16 bps/trade (5.5+5.5+2+1+1.8 funding)
+
+**7 Funding Exploit Strategies — Research Results:**
+
+All tested on 10 symbols, ~6 months, Bybit costs.
+
+| # | Strategy | Best Config | N | WR | PF | Annual | Verdict |
+|---|----------|-------------|---|----|----|--------|---------|
+| S1 | Funding Prediction (2h before) | >2bps | 68 | 35% | 0.44 | -59% | RED |
+| S2 | Funding Dump (after settlement) | >3bps/60m | 27 | 44% | 0.92 | -3% | RED |
+| S3 | Spot Hedge (delta-neutral) | >2bps | 0 | - | - | - | RED (no events) |
+| S4 | ADL Front-Run | >2bps/3x | 6 | 50% | 1.05 | +2% | ORANGE (N too low) |
+| S5 | Settlement Time Arb | diff>1bps | 67 | 0% | 0.00 | -20% | RED |
+| S6 | Mean Reversion | >1.5bps/16h | 144 | 49% | 1.44 | +217% | RED (directional bias) |
+| S7 | New Listing Spike | >2bps | 2 | 100% | inf | +69% | YELLOW (N=2) |
+
+**S6 Deep Dive:** Sharpe 1.53 appeared promising but all 144 trades were LONG (0 shorts). Positive funding = longs pay = strategy always goes long = directional bias. Feb -35% (bear), Mar +62% (bull). Not structural edge, just market direction.
+
+**Key Insight:** Major coins rarely have extreme funding (BTC: 0 events >2bps in 6 months). Real edge lives on micro-cap coins with 15-200+ bps rates — exactly what our current engine already trades.
+
 ### 2026-04-20 — Trading Platform v1 + Funding Capture Live
 
 **Funding Capture — первый полный автоматический цикл (20:00 UTC):**
