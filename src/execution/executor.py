@@ -137,7 +137,15 @@ class ExecutionManager:
         )
         latency_ms = (asyncio.get_event_loop().time() - t0) * 1000
 
-        entry_price = Decimal(str(raw.get("average") or raw.get("price") or 0))
+        raw_price = raw.get("average") or raw.get("price")
+        if not raw_price:
+            # Bybit market orders don't return price immediately; fetch last price
+            try:
+                ticker = await self._exchange.client.fetch_ticker(signal.symbol)
+                raw_price = ticker.get("last", 0)
+            except Exception:
+                raw_price = 0
+        entry_price = Decimal(str(raw_price))
         pos = LivePosition(
             symbol=signal.symbol,
             side=signal.side.value,
@@ -210,7 +218,13 @@ class ExecutionManager:
             )
             latency_ms = (asyncio.get_event_loop().time() - t0) * 1000
 
-            exit_price = raw.get("average") or raw.get("price") or "?"
+            exit_price = raw.get("average") or raw.get("price")
+            if not exit_price:
+                try:
+                    ticker = await self._exchange.client.fetch_ticker(symbol)
+                    exit_price = ticker.get("last", "?")
+                except Exception:
+                    exit_price = "?"
             pos = self._positions.close(symbol)
 
             if self._state and pos:
