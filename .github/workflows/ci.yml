@@ -43,5 +43,4 @@ jobs:
           script: |
             cd /root/trading
             git pull origin master
-            docker compose -f docker-compose.platform.yml up -d --build --no-deps --no-recreate redis
-            docker compose -f docker-compose.platform.yml up -d --build engine screener-4h screener-1h
+            docker compose -f docker-compose.platform.yml up -d --build --no-deps engine screener-4h screener-1h
