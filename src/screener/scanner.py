@@ -103,7 +103,7 @@ class MiroScreener:
         # Filter out stale data (delisted coins with frozen candles)
         stale_cutoff = now.timestamp() - 2 * 86400  # older than 2 days
         stale = [sym for sym, df in datasets.items()
-                 if len(df) > 0 and df.index[-1].timestamp() < stale_cutoff]
+                 if len(df) > 0 and df["ts"].iloc[-1].timestamp() < stale_cutoff]
         for sym in stale:
             del datasets[sym]
         if stale:
