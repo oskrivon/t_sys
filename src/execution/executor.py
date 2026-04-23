@@ -115,7 +115,10 @@ class ExecutionManager:
         if precomputed_qty and signal.metadata.get("_leverage_set"):
             qty = Decimal(str(precomputed_qty))
         else:
-            # Slow fallback
+            # Slow fallback — should not happen if precompute is wired correctly
+            logger.warning("precompute_missing_using_fallback",
+                           symbol=signal.symbol,
+                           funding_bps=funding_bps)
             await self._exchange.set_leverage(leverage, signal.symbol)
             target_notional = signal.metadata.get("target_notional", 0)
             qty = await self._compute_qty(signal.symbol, target_notional)

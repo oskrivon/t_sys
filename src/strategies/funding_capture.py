@@ -1,11 +1,13 @@
 """Funding Capture strategy — enter before settlement, collect funding payment.
 
 Logic:
-  1. REST scan ALL 573 pairs every 5 min → find high-funding coins
+  1. REST scan ALL pairs every 5 min → find high-funding coins
   2. WS subscribe only to hot coins (|rate| > scan_threshold)
   3. WS monitors precise timing + rate updates
-  4. 10s before settlement: emit TradeSignal if |rate| > trade_threshold
-  5. ExecutionManager enters, holds through settlement, exits after
+  4. T-10s: pre-compute qty + set leverage (slow, ~500ms)
+  5. T-2s: fire market order (fast, ~200ms)
+  6. T-0: settlement — funding credited
+  7. Exit on execType=Funding WS event (or timeout)
 
 Dynamic watchlist: REST discovers, WS monitors, minimal server load.
 Backtest result: +192% on $1k (3 months), ~$160/mo, WR 56%.
@@ -52,6 +54,8 @@ class FundingCaptureStrategy(Strategy):
         self._leverage: int = config.params.get("leverage", 10)
         self._entry_secs_before: int = config.params.get("entry_seconds_before", 10)
         self._exit_secs_after: int = config.params.get("exit_seconds_after", 15)
+        self._min_volume_24h: float = config.params.get("min_volume_24h", 5_000_000)
+        self._target_notional: float = config.params.get("target_notional", 25.0)
         # Dynamic watchlist: starts with always-monitor, expanded by REST scan
         self._monitored: set[str] = set(ALWAYS_MONITOR)
         self._ws_ref = None  # set by daemon after WS connect
@@ -61,8 +65,9 @@ class FundingCaptureStrategy(Strategy):
         self._scheduled: dict[str, asyncio.Task] = {}
         self._traded_this_round: set[str] = set()
         self._scan_task: Optional[asyncio.Task] = None
-        self._min_volume_24h: float = config.params.get("min_volume_24h", 5_000_000)
         self._last_scan_results: list[dict] = []
+        # Pre-computed for fast entry: symbol -> {qty, ...}
+        self._precomputed: dict[str, dict] = {}
 
     def set_ws(self, ws) -> None:
         """Called by daemon after WS is connected."""
@@ -77,7 +82,9 @@ class FundingCaptureStrategy(Strategy):
                      threshold_bps=self._threshold_bps,
                      scan_threshold_bps=self._scan_threshold_bps,
                      leverage=self._leverage,
-                     scan_interval=self._scan_interval)
+                     scan_interval=self._scan_interval,
+                     min_volume_24h=self._min_volume_24h,
+                     target_notional=self._target_notional)
 
     # ------------------------------------------------------------------
     # REST scanner — discovers high-funding coins across ALL pairs
@@ -179,7 +186,8 @@ class FundingCaptureStrategy(Strategy):
             return
 
         # Build ccxt symbol: BTCUSDT -> BTC/USDT:USDT
-        base = symbol_raw.replace("USDT", "")
+        # Use suffix strip, not replace() — replace removes ALL occurrences
+        base = symbol_raw[:-4] if symbol_raw.endswith("USDT") else symbol_raw
         ccxt_sym = f"{base}/USDT:USDT"
 
         direction = Side.LONG if funding_rate < 0 else Side.SHORT
@@ -221,10 +229,17 @@ class FundingCaptureStrategy(Strategy):
             self._traded_this_round.clear()
 
     async def _schedule_entry(self, opp: FundingOpportunity, secs_until: float) -> None:
-        """Wait until entry_secs_before settlement, then emit signal."""
-        wait = secs_until - self._entry_secs_before
-        if wait > 0:
-            await asyncio.sleep(wait)
+        """Wait, pre-compute, then fire order at T-2s.
+
+        Timeline:
+          T-entry_secs_before: pre-compute qty + set leverage (slow, ~500ms)
+          T-2s: fire create_order (fast, ~200ms)
+          T-0: settlement — we're already in position
+        """
+        # Phase 1: wait until pre-compute window
+        wait_precompute = secs_until - self._entry_secs_before
+        if wait_precompute > 0:
+            await asyncio.sleep(wait_precompute)
 
         # Re-check: rate might have changed
         current = self._opportunities.get(opp.symbol_raw)
@@ -235,13 +250,34 @@ class FundingCaptureStrategy(Strategy):
 
         opp = current  # use latest data
 
+        # Phase 2: pre-compute (BEFORE hot path) — leverage + qty
+        pre = await self._precompute_entry(opp)
+        if not pre:
+            self._scheduled.pop(opp.symbol_raw, None)
+            return
+
+        # Phase 3: wait until 2s before settlement, then fire order
+        now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+        remaining_s = (opp.next_funding_time - now_ms) / 1000
+        fire_wait = remaining_s - 2.0
+        if fire_wait > 0:
+            await asyncio.sleep(fire_wait)
+
+        # Final re-check
+        current = self._opportunities.get(opp.symbol_raw)
+        if not current or abs(current.funding_rate) < self._threshold_rate:
+            logger.info("funding_entry_cancelled_rate_dropped_final", symbol=opp.symbol_raw)
+            self._scheduled.pop(opp.symbol_raw, None)
+            return
+        opp = current
+
         signal = TradeSignal(
             strategy_id=self.config.strategy_id,
             symbol=opp.symbol_ccxt,
             side=opp.direction,
-            entry_price=0.0,  # market order
-            sl=0.0,           # no SL — exit on time
-            tp=0.0,           # no TP — exit on time
+            entry_price=0.0,
+            sl=0.0,
+            tp=0.0,
             confidence=min(abs(opp.funding_rate) * 10_000 / 20.0, 1.0),
             metadata={
                 "type": "funding_capture",
@@ -250,10 +286,19 @@ class FundingCaptureStrategy(Strategy):
                 "next_funding_time": opp.next_funding_time,
                 "leverage": self._leverage,
                 "exit_after_seconds": self._exit_secs_after,
+                "target_notional": self._target_notional,
                 "last_price": opp.last_price,
+                "_precomputed_qty": pre["qty"],
+                "_leverage_set": True,
             },
             timestamp=datetime.now(timezone.utc),
         )
+
+        logger.info("funding_signal_emitted",
+                     symbol=opp.symbol_raw,
+                     rate_bps=abs(opp.funding_rate) * 10_000,
+                     direction=opp.direction.value,
+                     qty=pre["qty"])
 
         await self._event_bus.publish(Event(
             type=EventType.SIGNAL_GENERATED,
@@ -261,12 +306,42 @@ class FundingCaptureStrategy(Strategy):
             source=self.config.strategy_id,
         ))
 
-        # Keep in _scheduled to prevent any further scheduling
-        # (will be cleaned up on next settlement cycle via _traded_this_round)
-        logger.info("funding_signal_emitted",
-                     symbol=opp.symbol_raw,
-                     rate_bps=abs(opp.funding_rate) * 10_000,
-                     direction=opp.direction.value)
+    async def _precompute_entry(self, opp: FundingOpportunity) -> dict | None:
+        """Pre-compute qty and set leverage BEFORE the hot path."""
+        try:
+            exchange = self._exchange_ref
+            if not exchange:
+                return None
+
+            # Set leverage (idempotent, cached by exchange after first call)
+            try:
+                await exchange.set_leverage(self._leverage, opp.symbol_ccxt)
+            except Exception:
+                pass  # "not modified" or already set
+
+            # Compute qty from last_price (no REST call needed)
+            market = exchange.market(opp.symbol_ccxt)
+            min_qty = float(market.get("limits", {}).get("amount", {}).get("min", 1))
+            qty_step = float(market.get("precision", {}).get("amount", min_qty))
+
+            if self._target_notional > 0 and opp.last_price > 0:
+                raw_qty = self._target_notional / opp.last_price
+                if qty_step > 0:
+                    raw_qty = int(raw_qty / qty_step) * qty_step
+                qty = max(raw_qty, min_qty)
+            else:
+                qty = min_qty
+
+            logger.info("funding_precomputed",
+                        symbol=opp.symbol_raw,
+                        qty=qty,
+                        price=opp.last_price,
+                        notional=round(qty * opp.last_price, 2))
+            return {"qty": qty}
+
+        except Exception:
+            logger.exception("funding_precompute_failed", symbol=opp.symbol_raw)
+            return None
 
     # ------------------------------------------------------------------
     # Status

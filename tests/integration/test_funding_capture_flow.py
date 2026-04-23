@@ -326,6 +326,11 @@ class TestSignalEmission:
         assert signal.metadata["funding_rate"] == -0.002
         assert signal.metadata["leverage"] == 10
         assert signal.strategy_id == "funding_capture"
+        # Precompute must be wired: qty pre-computed, leverage pre-set
+        assert "_precomputed_qty" in signal.metadata, "precomputed qty missing — order will use min_qty!"
+        assert signal.metadata["_precomputed_qty"] > 0
+        assert signal.metadata["_leverage_set"] is True
+        assert signal.metadata["target_notional"] == 25.0
 
     async def test_signal_cancelled_when_rate_drops(self, strategy, collecting_bus):
         nft = _now_ms() + 1_000

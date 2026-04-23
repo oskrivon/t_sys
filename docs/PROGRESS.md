@@ -2,6 +2,21 @@
 
 ## Лог
 
+### 2026-04-23 — Fix funding capture: precompute regression + min_qty bug
+
+**Root cause:** commit `744a6b4` partially staged — executor fast-path (`_precomputed_qty`) was committed, but strategy producer side was left in stash. Result: bot traded min_qty ($0.03–$1.13) instead of $25 notional, and entered at T-10s instead of T-2s. 15 trades today, all losing, sum PnL -4.64%.
+
+**Fixes:**
+- Restored 3-phase `_schedule_entry`: T-10s precompute (set_leverage + compute qty) → T-2s fire order → T-0 settlement
+- Restored `_precompute_entry()` method + `_target_notional` from config
+- Signal metadata now carries `_precomputed_qty`, `_leverage_set`, `target_notional`
+- Executor fallback logs `warning("precompute_missing_using_fallback")` instead of silent degradation
+- Fixed symbol parsing: `.replace("USDT","")` → suffix strip (prevents USDT→empty for USDTUSDT-like symbols)
+
+**Guard rails added:**
+- Contract test: `assert "_precomputed_qty" in signal.metadata` in integration tests
+- Architecture doc: "Cross-module contracts" section — 3 rules to prevent producer/consumer desync
+
 ### 2026-04-22 — Bugfixes + Universal Backtest Module + 7 Exploit Research
 
 **Bugfixes deployed:**

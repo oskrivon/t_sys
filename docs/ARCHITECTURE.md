@@ -212,6 +212,36 @@ Keys:
 4. **Strategy pattern** — стратегии реализуют общий интерфейс
 5. **Circuit breaker** — защита от каскадных сбоев API
 
+## Cross-module contracts
+
+Rules to prevent silent integration bugs (learned from the precompute incident — executor expected `_precomputed_qty` in signal metadata, strategy never set it, fallback silently traded min_qty for weeks).
+
+### 1. Producer + consumer = one commit + contract test
+
+When module A writes a field that module B reads, **both sides and a contract test must land in the same commit**. If staging drops one side, the test fails.
+
+Example: executor checks `signal.metadata["_precomputed_qty"]` → the test that asserts `"_precomputed_qty" in signal.metadata` must exist in the same commit.
+
+### 2. Fallbacks must be loud
+
+If a code path has a fast path and a slow/degraded fallback, the fallback **must log a warning**. Silent fallbacks hide bugs for weeks.
+
+```python
+# Bad — silently degrades
+qty = precomputed_qty or await self._compute_qty(symbol, 0)
+
+# Good — screams in logs
+if precomputed_qty:
+    qty = precomputed_qty
+else:
+    logger.warning("precompute_missing", symbol=symbol)
+    qty = await self._compute_qty(symbol, target_notional)
+```
+
+### 3. Test the intent, not the current code
+
+Tests should encode **what the system should do**, not mirror what's currently committed. If the design says "entry at T-2s with precomputed qty", the test asserts precomputed qty in metadata — even if the code doesn't set it yet (test stays red as a reminder).
+
 ## Зависимости между модулями
 
 ```
