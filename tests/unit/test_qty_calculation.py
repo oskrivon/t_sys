@@ -116,9 +116,9 @@ class TestComputeQty:
 
         qty = await executor._compute_qty("PEPE/USDT:USDT", target_notional=25)
 
-        # effective = 25 * 0.9989 = 24.9725; 24.9725/0.001 = 24972.5
-        # int(24972.5/1)*1 = 24972; max(24972, 1) = 24972
-        assert qty == Decimal("24972")
+        # effective = 25 * (1 - 0.0006*2) = 25 * 0.9988 = 24.97; 24.97/0.001 = 24970
+        # int(24970/1)*1 = 24970; max(24970, 1) = 24970
+        assert qty == Decimal("24970")
 
     async def test_rounding_down_to_step(self):
         """raw_qty=0.555, step=0.01 -> rounds down to 0.55."""
