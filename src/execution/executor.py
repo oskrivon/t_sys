@@ -166,7 +166,8 @@ class ExecutionManager:
                 side=signal.side.value, action="open",
                 price=str(entry_price), qty=str(qty),
                 metadata={"funding_bps": funding_bps, "leverage": leverage,
-                           "latency_ms": round(latency_ms, 1)},
+                           "latency_ms": round(latency_ms, 1),
+                           "book_t2s": signal.metadata.get("book_t2s", {})},
             )
 
         await self._event_bus.publish(Event(
@@ -247,7 +248,8 @@ class ExecutionManager:
                     pnl=f"{pnl_pct:.4f}%",
                     metadata={"entry_price": str(pos.entry_price),
                               "funding_bps": pos.metadata.get("funding_rate_bps", 0),
-                              "latency_ms": round(latency_ms, 1)},
+                              "latency_ms": round(latency_ms, 1),
+                              "book_t2s": pos.metadata.get("book_t2s", {})},
                 )
 
             await self._event_bus.publish(Event(
