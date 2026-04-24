@@ -138,18 +138,28 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 - [x] **Liquidation Cascade Capture** — RED. Детектируемы (vol spike + price move), но не торгуемы: MFE +0.52% avg но reversal за 1-3 мин, все exit-стратегии убыточны (WR 33-56%, net negative). Cross-exchange propagation мгновенная (ms), нет arbitrage window. 9 trades за 7 дней — мало и шумно. Закрыто.
 - [x] **Fee Rebate Mining (MM)** — ORANGE. Bybit: 121 пар со spread >4bps, est $10-15/day. Binance: rebate -2.5bps (profit on any fill). Но это отдельная MM система — high effort.
 
-### Tier 3 — backlog/проверить данными
+### Screener observability
+- [ ] **Add verbose logging to screener scan pipeline** — log levels found, breakouts detected, retest candidates, ML scores per symbol. Currently only outputs `signals=0` with no visibility into the funnel. Both 4h and 1h screeners alive but 0 signals since 2026-04-22 restart — unclear if market is quiet or filters too strict.
 
-- [ ] **Weekend Effect** — funding rates extreme в выходные? Проверить историю по дням недели.
-- [ ] **Cross-TF Funding** — 4h/1h coins дают 2-6x больше settlements. Уже частично делаем.
-- [ ] **Funding Dump Trade** — short 5 мин после settlement: +0.15% net, WR 57%. Спички на $15, $315/мес на $1k.
-- [ ] **Funding Spot Hedge** — buy spot + short perp при >31bps: 100% WR, $15/мес на $100.
+### Data collection in progress
+
+- [ ] **Orderbook T-2s snapshot analysis** — collecting book_t2s (bid1/ask1/bid5/ask5, spread) in trades_log metadata since 2026-04-24. After 50+ trades, analyze: does book depth at T-2s correlate with net PnL / slippage? If yes, add as entry filter or adaptive qty sizing.
+
+### Tier 3 — next up after funding capture stabilization
+
+- [ ] **Funding Dump Trade** — short 5 min after settlement. Research: 100% dump rate at 5 min, median -0.58%, WR 57%, EV +0.179%/trade. Sim on 2026-04-23 data: +$9.29/day on $1k (+18% on top of base capture). Reuses same WS subs, no extra infra. StdDev 1.06% — noisy, needs 50+ trade sample to validate.
+- [ ] **Funding Spot Hedge** — buy spot + short perp, collect funding, close both. Delta neutral = zero price risk. Breakeven at >31bps (spot fee 0.1% + perp 0.055% = 31bps RT). Research: 100% WR at >31bps threshold, 1.4 events/day. Sim on 2026-04-23: +$6.56/day on $1k (6 eligible coins). Needs spot market availability check.
+- [ ] **Weekend Effect** — funding rates extreme in weekends? Check history by day of week.
+- [ ] **Cross-TF Funding** — 4h/1h coins give 2-6x more settlements. Already partially doing.
 
 ## TODO — Multi-Exchange Expansion
 
-- [ ] **Binance funding capture** — fees 8bps vs 11bps Bybit. Maker rebate -2.5bps → breakeven 1.5bps. 15-65x глубже стаканы. Добавить после стабилизации Bybit engine.
-- [ ] Split $10k: Binance 50% + Bybit 40% + OKX 10%
-- [ ] Адаптировать engine для multi-exchange (exchange factory в daemon.py)
+Scale funding capture to multiple exchanges — different liquidity pools, no cross-crowding. Add after Bybit engine is stable + dump/hedge layers validated.
+
+- [ ] **Binance funding capture** — fees 8bps vs 11bps Bybit. Maker rebate -2.5bps → breakeven 1.5bps. 15-65x deeper books. Different coin set = more opportunities without increasing per-exchange impact.
+- [ ] **OKX funding capture** — similar fee structure. Third independent pool.
+- [ ] Adapt engine for multi-exchange (exchange factory in daemon.py, per-exchange WS)
+- [ ] Split capital: Binance 50% + Bybit 40% + OKX 10%
 
 ## Backlog — Structural Exploits
 
