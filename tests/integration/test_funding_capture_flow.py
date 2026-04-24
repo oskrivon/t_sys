@@ -66,6 +66,11 @@ def mock_raw_exchange():
         "limits": {"amount": {"min": 0.001}},
         "precision": {"amount": 0.001},
     })
+    # Orderbook with sufficient depth for book depth check
+    exchange.fetch_order_book = AsyncMock(return_value={
+        "bids": [[50000.0, 1.0], [49999.0, 2.0]],
+        "asks": [[50001.0, 1.0], [50002.0, 2.0]],
+    })
     return exchange
 
 

@@ -56,6 +56,7 @@ class FundingCaptureStrategy(Strategy):
         self._exit_secs_after: int = config.params.get("exit_seconds_after", 15)
         self._min_volume_24h: float = config.params.get("min_volume_24h", 5_000_000)
         self._target_notional: float = config.params.get("target_notional", 25.0)
+        self._min_book_depth_mult: float = config.params.get("min_book_depth_mult", 2.0)
         # Dynamic watchlist: starts with always-monitor, expanded by REST scan
         self._monitored: set[str] = set(ALWAYS_MONITOR)
         self._ws_ref = None  # set by daemon after WS connect
@@ -307,7 +308,7 @@ class FundingCaptureStrategy(Strategy):
         ))
 
     async def _precompute_entry(self, opp: FundingOpportunity) -> dict | None:
-        """Pre-compute qty and set leverage BEFORE the hot path."""
+        """Pre-compute qty, set leverage, check book depth BEFORE the hot path."""
         try:
             exchange = self._exchange_ref
             if not exchange:
@@ -332,11 +333,34 @@ class FundingCaptureStrategy(Strategy):
             else:
                 qty = min_qty
 
+            notional = qty * opp.last_price
+
+            # Check orderbook depth: bid1/ask1 must hold our order
+            # without eating multiple levels (= slippage > funding)
+            try:
+                ob = await exchange.fetch_order_book(opp.symbol_ccxt, limit=5)
+                bid1_usd = ob["bids"][0][1] * ob["bids"][0][0] if ob["bids"] else 0
+                ask1_usd = ob["asks"][0][1] * ob["asks"][0][0] if ob["asks"] else 0
+                min_depth = min(bid1_usd, ask1_usd)
+                required = notional * self._min_book_depth_mult
+
+                if min_depth < required:
+                    logger.info("funding_precompute_skipped_thin_book",
+                                symbol=opp.symbol_raw,
+                                bid1_usd=round(bid1_usd, 1),
+                                ask1_usd=round(ask1_usd, 1),
+                                notional=round(notional, 2),
+                                required=round(required, 2))
+                    return None
+            except Exception:
+                logger.warning("funding_book_check_failed", symbol=opp.symbol_raw)
+                # Proceed without check — better than skipping on API error
+
             logger.info("funding_precomputed",
                         symbol=opp.symbol_raw,
                         qty=qty,
                         price=opp.last_price,
-                        notional=round(qty * opp.last_price, 2))
+                        notional=round(notional, 2))
             return {"qty": qty}
 
         except Exception:

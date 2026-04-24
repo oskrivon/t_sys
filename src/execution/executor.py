@@ -382,7 +382,7 @@ class ExecutionManager:
     # Helpers
     # ------------------------------------------------------------------
 
-    TAKER_FEE: float = 0.00055  # Bybit VIP0 taker fee per side
+    TAKER_FEE: float = 0.00060  # Bybit VIP0 taker fee per side (6bps)
 
     async def _compute_qty(self, symbol: str, target_notional: float = 0) -> Decimal:
         """Compute order quantity from target_notional, accounting for fees.

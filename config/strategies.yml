@@ -16,6 +16,7 @@ strategies:
       scan_interval_seconds: 300
       min_volume_24h: 5000000     # $5M — filter out illiquid shitcoins
       target_notional: 25.0       # $25 per position
+      min_book_depth_mult: 2.0    # skip if book level1 < 2x our notional
 
   miro_breakout:
     enabled: false
