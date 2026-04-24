@@ -272,6 +272,25 @@ class FundingCaptureStrategy(Strategy):
             return
         opp = current
 
+        # Snapshot orderbook at T-2s for data collection
+        book_snapshot = {}
+        if self._exchange_ref:
+            try:
+                ob = await self._exchange_ref.fetch_order_book(opp.symbol_ccxt, limit=5)
+                bids = ob.get("bids", [])
+                asks = ob.get("asks", [])
+                book_snapshot = {
+                    "bid1_usd": round(bids[0][1] * bids[0][0], 2) if bids else 0,
+                    "ask1_usd": round(asks[0][1] * asks[0][0], 2) if asks else 0,
+                    "bid5_usd": round(sum(b[1] * b[0] for b in bids[:5]), 2),
+                    "ask5_usd": round(sum(a[1] * a[0] for a in asks[:5]), 2),
+                    "spread_bps": round(
+                        (asks[0][0] - bids[0][0]) / bids[0][0] * 10000, 1
+                    ) if bids and asks else 0,
+                }
+            except Exception:
+                logger.warning("funding_book_snapshot_failed", symbol=opp.symbol_raw)
+
         signal = TradeSignal(
             strategy_id=self.config.strategy_id,
             symbol=opp.symbol_ccxt,
@@ -291,6 +310,7 @@ class FundingCaptureStrategy(Strategy):
                 "last_price": opp.last_price,
                 "_precomputed_qty": pre["qty"],
                 "_leverage_set": True,
+                "book_t2s": book_snapshot,
             },
             timestamp=datetime.now(timezone.utc),
         )
