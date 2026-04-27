@@ -45,6 +45,13 @@
 - Optimal exit раньше: Sun 12:00 (avg +0.96%) лучше чем Sun 23:00 (+0.54%).
 - 2023 лучший год (Sharpe 1.13) — компенсирует BTC/ETH слабость.
 
+**Caveat — overfitting risk:**
+- Sharpe 2.82 завышен: 64 комбинации протестированы, выбрана лучшая (data mining bias)
+- Annualization sqrt(52) при 18 trades/year некорректен
+- Реалистичная оценка после correction: **Sharpe 0.8-1.2, avg +0.4-0.6%/trade, ~8-12%/год**
+- Single predictor (NASDAQ week) без cherry-picking: Sharpe 1.1 — это floor
+- Forward test 3 мес нужен для валидации реального edge
+
 **Файлы:** `scripts/tmp/weekend_deep.py`, `weekend_deep_dive.py`, `weekend_eth_sol.py`, `data/reports/weekend_strategy_matrix.csv`
 
 ### 2026-04-27 — Weekend Effect: NASDAQ predicts crypto weekends (PROMISING)

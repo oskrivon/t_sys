@@ -108,9 +108,13 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
       91 трейдов за 5 лет (~18/год, каждый ~3й weekend).
       CONSISTENT half-split, recent (2024+) = +1.01%. Edge не decay'ится.
       
-      **Риски:** single-predictor decay наблюдался (NASDAQ week slope -0.14%/yr),
-      но ensemble решает проблему — 2023 (мёртвый для single) profitable в ensemble.
-      При структурном сдвиге рынка может ослабнуть. Мониторить: 3 мес flat → пересмотр.
+      **Риски:**
+      - Overfitting: Sharpe 2.82 завышен — 64 комбинации протестированы, best-of-N bias.
+        Реалистичная оценка: Sharpe 0.8-1.2, avg +0.4-0.6%/trade, ~8-12%/год.
+      - Single-predictor decay: NASDAQ week slope -0.14%/yr (ensemble может замедлить, не устранить).
+      - Weekend effect — известная тема, partially priced in.
+      - Forward test 3 мес обязателен перед scale up.
+      - Мониторить: 3 мес flat/negative → пересмотр.
       
       **Параметры:**
         - Signal: VOTE из 3 предикторов (BABA fri return, QQQ fri return, XLK week return)
