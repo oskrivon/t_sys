@@ -2,6 +2,130 @@
 
 ## Лог
 
+### 2026-04-27 — Weekend Ensemble: VOTE(BABA+NQ+Tech) Sharpe 2.82 (BEST STRATEGY FOUND)
+
+**Поиск предикторов:** 32 тикера × 2 сигнала = 64 комбинации протестировано.
+
+**Сюрпризы:**
+- **Alibaba fri** (#1 single, Sharpe 1.38) — бьёт NASDAQ (1.10). Азиатский risk sentiment.
+- **Japan fri** (#2, Sharpe 1.32) — самый сильный recent (+0.62%). Японский ритейл активен на выходных.
+- **China Internet fri** (#4, Sharpe 1.26) — улучшается во второй половине выборки.
+- Crypto-adjacent (MSTR, COIN) — посредственно (Sharpe 0.57). Слишком коррелированы с BTC.
+- Oil, Gold, VIX — не работают или обратные.
+
+**Ensemble VOTE — прорыв:**
+- VOTE(BABA fri + NQ fri + Tech_sector week): **Sharpe 2.82**, WR 64%, avg +1.00%/trade
+- 91 трейдов за 5 лет (~18/год), MaxDD -8.6%, **profitable 6/6 years** (включая 2023!)
+- Recent (2024+) = +1.01% (edge НЕ decay'ится в ensemble)
+- CONSISTENT half-split (H1: +1.26%, H2: +0.74%)
+- Vs baseline NASDAQ week (Sharpe 1.10): improvement **2.6x**
+
+**Почему ensemble лучше:** торгует только когда 2+ из 3 independent предикторов согласны. Фильтрует шумные сигналы → WR 64% vs 55%, MaxDD -8.6% vs -20.7%.
+
+### 2026-04-27 — Weekend Effect: full deep dive, 3 assets, 5 years (CONFIRMED)
+
+**Deep dive on best strategy: NASDAQ week_ret → crypto weekend (Fri 21:00 → Sun 23:00)**
+
+**BTC (225 weekends, 2021-2026):**
+- Overall: WR 55%, avg +0.43%, total +96%, **Sharpe 1.12**, MaxDD -21%. CONSISTENT.
+- Year-by-year: positive every year except 2023 (flat). 2021: Sharpe 2.21, 2022: 1.56, 2024: 1.29.
+- Signal strength sweet spot: 1.5-3% NQ move → WR 57%, avg +0.76%.
+- Counter-trend (NQ signal vs BTC 30d trend) → WR 60%, avg +0.65% — лучше чем aligned.
+- Optimal SL: 2% (31% stopped, total +81%). Without SL: total +96%.
+- Exit timing: signal нарастает линейно Sat 00→Sun 23. Лучший exit Sun 23:00.
+
+**ETH (225 weekends, 2021-2026):**
+- Overall: WR 55%, avg +0.48%, total +107%, Sharpe 0.84, MaxDD -35%. CONSISTENT.
+- Best in "down" regime (30d return -10% to -2%): WR 70%, avg +1.52%.
+- 2023 убыточный (-8%), остальные годы в плюсе.
+
+**SOL (185 weekends, 2022-2026):**
+- Overall: WR 56%, avg +0.54%, total +99%, Sharpe 0.65, MaxDD -34%. CONSISTENT.
+- Более волатильный (MAE -3.77%). Optimal SL = 3% (total +108%).
+- Optimal exit раньше: Sun 12:00 (avg +0.96%) лучше чем Sun 23:00 (+0.54%).
+- 2023 лучший год (Sharpe 1.13) — компенсирует BTC/ETH слабость.
+
+**Файлы:** `scripts/tmp/weekend_deep.py`, `weekend_deep_dive.py`, `weekend_eth_sol.py`, `data/reports/weekend_strategy_matrix.csv`
+
+### 2026-04-27 — Weekend Effect: NASDAQ predicts crypto weekends (PROMISING)
+
+**Гипотеза:** NASDAQ week return предсказывает направление BTC/ETH/SOL на выходных.
+
+**Данные:** 226 выходных (Apr 2021 — Apr 2026), BTC/ETH/SOL 4h Bybit + QQQ/SPY/GLD/UUP daily. 72 комбинации (3 крипто × 4 equity × 3 предиктора × 2 exit).
+
+**Лучшие стратегии:**
+- BTC | NASDAQ week_ret → exit Sun 23:00: **Sharpe 1.12**, WR 55%, avg +0.43%/wk, total +98%, MaxDD -21%. **CONSISTENT** (H1: WR 55% avg +0.57%, H2: WR 56% avg +0.29%)
+- BTC | NASDAQ week_ret → exit Mon 13:30: **Sharpe 1.21**, WR 54%, avg +0.70%/wk, total +157%, MaxDD -44%. CONSISTENT
+- ETH | NASDAQ fri_ret → exit Sun 23:00: Sharpe 0.92, WR 54%, avg +0.51%/wk. CONSISTENT
+- SOL | NASDAQ week_ret → Sun 23:00: Sharpe 0.68, WR 56%
+
+**Не работает:** Gold, DXY как предикторы — Sharpe отрицательный. Эффект именно risk-on/risk-off (equity→crypto).
+
+**Механизм:** NASDAQ week return = proxy для risk sentiment. Крипто-трейдеры на выходных реагируют на пятничный настрой рынка. К понедельнику эффект исчезает (institutional money возвращается).
+
+**Статус: PROMISING — требует forward test и детальное копание.**
+
+### 2026-04-27 — BTC-NASDAQ weekend gap hypothesis: REJECTED
+
+**Гипотеза:** BTC и NASDAQ скоррелированы (r≈0.6). NASDAQ закрыт на выходных. При гэпе на открытии в понедельник BTC должен "подтянуться".
+
+**Данные:** 49 выходных (May 2025 — Apr 2026), BTC 1h Bybit + QQQ daily.
+
+**Результат:**
+- NASDAQ gap → BTC weekend move: r=**+0.48** — BTC уже отыгрывает гэп ЗА ВЫХОДНЫЕ, до открытия NYSE
+- NASDAQ gap → BTC Monday session: r=**-0.28** — обратная! BTC откатывает в понедельник (уже отыграл)
+- Remaining gap → BTC Monday: r=-0.08 (ноль)
+- Стратегия "trade remaining gap": WR 53%, avg return **-0.25%**, Sharpe **-1.14**, total **-12.4%/год**
+- **Вердикт: REJECTED.** Рынок эффективен — BTC закрывает расхождение за выходные, к понедельнику ловить нечего.
+
+### 2026-04-27 — Funding capture deep analysis: depth, sizing, post-funding, vision
+
+**Данные:** 106 trades в engine DB (Apr 22-26), 102 entries в engine logs (Apr 20-26), 609 funding settlements (29 монет × 21 settlement за 7 дней).
+
+**Результаты исследований:**
+
+1. **Корреляция depth vs PnL (29 трейдов с book_t2s):**
+   - spread_bps vs net_bps: r=-0.30, notional/top5 vs net_bps: r=-0.23
+   - funding_bps vs pnl_pct: r=-0.80 (высокий фандинг = высокий slippage)
+   - Порог: notional > 12% от top5 depth → средний результат убыточный
+
+2. **Масштабирование до $1k (constant slippage model):**
+   - Baseline slippage = -0.46% (settlement volatility, не market impact)
+   - Breakeven funding rate = ~54 bps (slip 46 + fees 11 - 3 referral)
+   - TOP-1 стратегия: +$64/день, но 3/7 дней убыточные (дни с funding < 50bps)
+   - Depth-adaptive sizing: работает, но 94% капитала простаивает (стаканы мелкие)
+
+3. **Referral -30% fee impact:**
+   - Breakeven сдвигается с 57.1 до 53.8 bps (saving 3.3 bps/trade)
+   - Fee = 19% затрат, slippage = 81% — referral не game changer
+   - Лучший вариант: limit entry + referral → breakeven 51.4 bps
+
+4. **Binance для scaling: НЕ приоритет.**
+   - 13/20 top-funding монет — Bybit-only (KAT, MIRA, STABLE, NEWT, CHIP...)
+   - Breakeven improvement: -1.4 bps (marginal)
+   - Рекомендация: сначала доказать profitability на Bybit
+
+5. **AI Vision на funding charts (37 трейдов scored):**
+   - Корреляция score vs net_bps: **-0.17** (обратная!)
+   - Модель видит volatility = "плохо", но для funding capture volatility = норма
+   - Score 2-3 (самый "плохой"): avg net +39 bps. Score 6-7: avg net +1.5 bps
+   - **Вердикт: vision для funding capture не работает в текущем виде**
+
+6. **Post-funding bounce study (609 settlements × 29 coins):**
+   - Средний post-10m move = **-0.01%** (ноль на большой выборке)
+   - "Near-zero delta" гипотеза не подтвердилась
+   - sett_delta → post_10m: r=+0.21 (continuation, не reversal)
+   - Крупные bounces (+5-14%) = случайные pump'ы на illiquid альтах
+   - **Вердикт: пост-funding trade не имеет edge**
+
+**Файлы данных:**
+- `data/trades_log_server.json` — 106 trades из engine DB
+- `data/all_engine_funding_lines.txt` — 366 строк из всех engine логов
+- `data/reports/post_funding_wide.csv` — 609 settlements wide study
+- `data/reports/funding_vision_results.csv` — 37 vision scores
+- `data/charts/funding/` — 50 1m графиков вокруг settlement
+- `scripts/tmp/` — ~10 аналитических скриптов
+
 ### 2026-04-23 — Fix funding capture: precompute regression + min_qty bug
 
 **Root cause:** commit `744a6b4` partially staged — executor fast-path (`_precomputed_qty`) was committed, but strategy producer side was left in stash. Result: bot traded min_qty ($0.03–$1.13) instead of $25 notional, and entered at T-10s instead of T-2s. 15 trades today, all losing, sum PnL -4.64%.

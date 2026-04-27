@@ -77,13 +77,14 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 **Этап 4 — Live trading MVP (multi-strategy)**
 
 Архитектура построена: Strategy ABC + PortfolioManager + ExecutionManager.
-Три подтверждённые стратегии:
+Четыре подтверждённые стратегии:
 
-| Стратегия | Edge | WR | Annual (est.) | Allocation |
-|---|---|---|---|---|
-| Miro + ML + Vision>=8 | S/R levels + AI filter | 58% | +7.3% (6 t/mo) | 40% |
-| Volume Ranking L/S | Volume momentum | — | +14% (Sharpe 1.6) | 50% |
-| Funding capture >10bps | Structural exploit | 56% | +192% (tiny size) | 10% |
+| Стратегия | Edge | WR | Annual (est.) | Sharpe | Allocation |
+|---|---|---|---|---|---|
+| **Weekend Ensemble** | **VOTE(BABA+NQ+XLK)→BTC** | **64%** | **+18% (18 t/yr)** | **2.82** | **30%** |
+| Volume Ranking L/S | Volume momentum | — | +14% (Sharpe 1.6) | 1.6 | 30% |
+| Miro + ML + Vision>=8 | S/R levels + AI filter | 58% | +7.3% (6 t/mo) | — | 25% |
+| Funding capture >10bps | Structural exploit | 56% | +192% (tiny size) | — | 15% |
 
 - [ ] Paper trading validation: 4 недели все 3 стратегии параллельно
 - [ ] Vision интеграция в live screener (score>=8 → trade, <5 → skip)
@@ -101,6 +102,31 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
       ✅ Engine Redis integration (commands, events, status KV)
       ✅ Strategy config from YAML (config/strategies.yml)
       ✅ Docker Compose (6 сервисов)
+- [ ] Weekend Ensemble Strategy:
+      **VOTE(BABA fri + NASDAQ fri + Tech_sector week) → BTC weekend**
+      Sharpe 2.82, WR 64%, avg +1.0%/trade, MaxDD -8.6%, profitable 6/6 years.
+      91 трейдов за 5 лет (~18/год, каждый ~3й weekend).
+      CONSISTENT half-split, recent (2024+) = +1.01%. Edge не decay'ится.
+      
+      **Риски:** single-predictor decay наблюдался (NASDAQ week slope -0.14%/yr),
+      но ensemble решает проблему — 2023 (мёртвый для single) profitable в ensemble.
+      При структурном сдвиге рынка может ослабнуть. Мониторить: 3 мес flat → пересмотр.
+      
+      **Параметры:**
+        - Signal: VOTE из 3 предикторов (BABA fri return, QQQ fri return, XLK week return)
+        - Торгуем только при консенсусе 2/3 или 3/3
+        - Entry: BTC Fri 21:00 UTC, direction = majority vote
+        - Exit: Sun 23:00 UTC
+        - SL: 2%
+        - Опционально: ETH, SOL параллельно (диверсификация)
+      
+      Фаза 1 (ближайшая пятница): paper trade + Telegram alert
+        - [ ] Скрипт: fetch QQQ/BABA/XLK, compute signals, send Telegram
+        - [ ] Cron: запуск пятница 21:05 UTC
+        - [ ] Ручное открытие позиции по alert
+        - [ ] Закрытие вс 23:00 UTC
+      Фаза 2 (4-8 нед paper): live на $500-1k без плеча
+      Фаза 3: scale + leverage 2-3x если live Sharpe >1.0
 - [ ] Risk manager: per-strategy allocation, conflict resolution, drawdown circuit breaker
 - [ ] Live execution через CCXT (spot для Miro, futures для VR + funding)
 - [ ] Начать с $2-5k, scale up при positive results
@@ -166,6 +192,30 @@ Scale funding capture to multiple exchanges — different liquidity pools, no cr
 - **Token Unlock Shorts** — ARB стабильно -7...-15% после unlock за 3 месяца подряд. Предсказуемый механический поток (VC/team продают). Нужно: TokenUnlocks.app API ($50-100/мес) для точных дат + % supply. Ручной research 1x/мес viable. При $1k позиции: $70-150 за event. **Приоритет: HIGH при scale up.**
 - **Launchpool Front-Run** — long staking token (BNB/MNT) при анонсе launchpool. Buying pressure предсказуем. Нужно: парсер Binance/Bybit announcements (Telegram каналы, RSS). Effort: MEDIUM. **Приоритет: MEDIUM.**
 - **Binance Maker Rebate MM** — Binance платит -0.025% за maker fills. Любой fill = profit. Нужно: MM бот (order management, inventory risk). $10-50/day на $1-5k. Effort: HIGH (отдельная система). **Приоритет: LOW.**
+
+## Backlog — Orderbook Microstructure
+
+### Orderbook-based стратегии (L2 depth analysis)
+
+**Контекст:** скальперы торгуют пробои после размытия айсбергов — крупный скрытый ордер держит уровень, после исчерпания цена пробивает. Citadel/Virtu/Jump строят на этом целый бизнес. Академически доказано: order flow imbalance предсказывает движение цены на 1-5 сек (Cont et al., 2014, r=0.3-0.5).
+
+**Проблема:** требует колокация (microsecond latency) + капитал. С VPS + 50ms latency + $1k — не конкуренты HFT.
+
+**Реалистичный путь:**
+1. **Фаза 0 — Research (текущая):** собрать L2 data через Bybit WS `orderbook.50`, 5-10 монет, 2-3 дня. Искать: iceberg patterns, order flow imbalance, depth-price correlation. Цена: $0 (только сервер).
+2. **Фаза 1 — Execution optimization:** использовать L2 data для улучшения entry/exit в funding capture. Limit order placement на уровнях с поддержкой в стакане. Ожидание: -3-5 bps slippage. Не требует HFT infra.
+3. **Фаза 2 — Standalone стратегия (если Фаза 0 покажет edge):** iceberg detection + breakout. Нужно: доказать edge на исторических данных → тогда обосновать колокацию и капитал.
+
+**Data sources:**
+- Bybit WS `orderbook.50` — бесплатно, 50 уровней, 20ms updates
+- Tardis L2 paid — $50-500/мес за исторические snapshots
+- Binance data.vision — бесплатный L2 архив (громоздко)
+- Свой коллектор — 2-4 недели разработки
+
+**Критерий запуска Фазы 1:** funding capture стабильно прибылен 30+ дней.
+**Критерий запуска Фазы 2:** доказанный edge на 1000+ L2 событий с положительным EV.
+
+**Приоритет: LOW (research mode). Держим в голове: если найдём edge — колокация и капитал найдутся.**
 
 ## Backlog — Прочее
 
