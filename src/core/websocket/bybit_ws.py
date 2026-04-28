@@ -162,10 +162,12 @@ class BybitWebSocket(WebSocketFeed):
                     await ws.send(json.dumps({"op": "ping"}))
                 except Exception:
                     await self._reconnect(label)
+                    ws = self._public_ws if label == "public" else self._private_ws
             except websockets.ConnectionClosed:
                 logger.warning("bybit_ws_closed", label=label)
                 if self._running:
                     await self._reconnect(label)
+                    ws = self._public_ws if label == "public" else self._private_ws
             except Exception:
                 logger.exception("bybit_ws_recv_error", label=label)
                 await asyncio.sleep(1)
