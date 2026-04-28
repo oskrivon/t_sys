@@ -123,6 +123,7 @@ class FundingCaptureStrategy(Strategy):
                 if vol_24h < self._min_volume_24h:
                     continue
                 rate = abs(float(fr))
+                nft = int(t.get("info", {}).get("nextFundingTime", 0) or 0)
                 if rate >= self._scan_threshold_rate:
                     raw = sym.replace("/", "").replace(":USDT", "")
                     hot_symbols.add(raw)
@@ -131,6 +132,7 @@ class FundingCaptureStrategy(Strategy):
                         "rate": float(fr),
                         "rate_bps": rate * 10_000,
                         "volume_24h": vol_24h,
+                        "next_funding_ms": nft,
                     })
 
             scan_results.sort(key=lambda x: x["rate_bps"], reverse=True)
@@ -159,8 +161,37 @@ class FundingCaptureStrategy(Strategy):
                 top3 = ", ".join(f"{r['symbol']}={r['rate_bps']:.0f}bps" for r in scan_results[:3])
                 logger.info("funding_scan_top", top=top3)
 
+            # Log settlement schedule for coins above trade threshold
+            self._log_settlement_schedule(scan_results)
+
         except Exception:
             logger.exception("funding_scan_error")
+
+    def _log_settlement_schedule(self, scan_results: list[dict]) -> None:
+        """Group tradeable coins by next settlement time for visibility."""
+        now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+        # Group by settlement hour
+        schedule: dict[str, list[str]] = {}
+        for r in scan_results:
+            if r["rate_bps"] < self._threshold_bps:
+                continue
+            nft = r.get("next_funding_ms", 0)
+            if not nft:
+                continue
+            dt = datetime.fromtimestamp(nft / 1000, tz=timezone.utc)
+            slot = dt.strftime("%H:%M")
+            mins_until = int((nft - now_ms) / 60_000)
+            entry = f"{r['symbol']}={r['rate_bps']:.0f}bps"
+            schedule.setdefault(slot, []).append((mins_until, entry))
+
+        if schedule:
+            parts = []
+            for slot in sorted(schedule.keys()):
+                items = schedule[slot]
+                mins = items[0][0]
+                coins = "+".join(e for _, e in items[:3])
+                parts.append(f"{slot}({mins}m):{coins}")
+            logger.info("funding_settlement_schedule", slots="; ".join(parts))
 
     async def on_tick(self, exchange) -> list[TradeSignal]:
         """Not used — this strategy is WS-driven."""
@@ -310,6 +341,7 @@ class FundingCaptureStrategy(Strategy):
                 "last_price": opp.last_price,
                 "_precomputed_qty": pre["qty"],
                 "_leverage_set": True,
+                "book_precompute": pre.get("book_precompute", {}),
                 "book_t2s": book_snapshot,
             },
             timestamp=datetime.now(timezone.utc),
@@ -355,33 +387,43 @@ class FundingCaptureStrategy(Strategy):
 
             notional = qty * opp.last_price
 
-            # Check orderbook depth: bid1/ask1 must hold our order
-            # without eating multiple levels (= slippage > funding)
+            # Snapshot orderbook at precompute time (T-10s) for data collection.
+            # Log thin books but do NOT block — we need more data to validate
+            # whether the filter reliably cuts losing trades.
+            book_pre = {}
             try:
                 ob = await exchange.fetch_order_book(opp.symbol_ccxt, limit=5)
-                bid1_usd = ob["bids"][0][1] * ob["bids"][0][0] if ob["bids"] else 0
-                ask1_usd = ob["asks"][0][1] * ob["asks"][0][0] if ob["asks"] else 0
+                bids = ob.get("bids", [])
+                asks = ob.get("asks", [])
+                bid1_usd = bids[0][1] * bids[0][0] if bids else 0
+                ask1_usd = asks[0][1] * asks[0][0] if asks else 0
+                book_pre = {
+                    "bid1_usd": round(bid1_usd, 2),
+                    "ask1_usd": round(ask1_usd, 2),
+                    "bid5_usd": round(sum(b[1] * b[0] for b in bids[:5]), 2),
+                    "ask5_usd": round(sum(a[1] * a[0] for a in asks[:5]), 2),
+                    "spread_bps": round(
+                        (asks[0][0] - bids[0][0]) / bids[0][0] * 10000, 1
+                    ) if bids and asks else 0,
+                }
                 min_depth = min(bid1_usd, ask1_usd)
                 required = notional * self._min_book_depth_mult
-
                 if min_depth < required:
-                    logger.info("funding_precompute_skipped_thin_book",
-                                symbol=opp.symbol_raw,
-                                bid1_usd=round(bid1_usd, 1),
-                                ask1_usd=round(ask1_usd, 1),
-                                notional=round(notional, 2),
-                                required=round(required, 2))
-                    return None
+                    logger.warning("funding_thin_book",
+                                   symbol=opp.symbol_raw,
+                                   bid1_usd=round(bid1_usd, 1),
+                                   ask1_usd=round(ask1_usd, 1),
+                                   notional=round(notional, 2),
+                                   required=round(required, 2))
             except Exception:
                 logger.warning("funding_book_check_failed", symbol=opp.symbol_raw)
-                # Proceed without check — better than skipping on API error
 
             logger.info("funding_precomputed",
                         symbol=opp.symbol_raw,
                         qty=qty,
                         price=opp.last_price,
                         notional=round(notional, 2))
-            return {"qty": qty}
+            return {"qty": qty, "book_precompute": book_pre}
 
         except Exception:
             logger.exception("funding_precompute_failed", symbol=opp.symbol_raw)

@@ -167,6 +167,7 @@ class ExecutionManager:
                 price=str(entry_price), qty=str(qty),
                 metadata={"funding_bps": funding_bps, "leverage": leverage,
                            "latency_ms": round(latency_ms, 1),
+                           "book_precompute": signal.metadata.get("book_precompute", {}),
                            "book_t2s": signal.metadata.get("book_t2s", {})},
             )
 

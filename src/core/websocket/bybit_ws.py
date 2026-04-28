@@ -117,11 +117,14 @@ class BybitWebSocket(WebSocketFeed):
     async def subscribe_tickers(self, symbols: list[str]) -> None:
         """Subscribe to tickers. Symbols in ccxt format (BTC/USDT:USDT) or raw (BTCUSDT)."""
         args = []
+        existing = set(self._ticker_subs)
         for s in symbols:
             raw = s.replace("/", "").replace(":USDT", "")
             topic = f"tickers.{raw}"
             args.append(topic)
-        self._ticker_subs = args
+            existing.add(topic)
+        # Keep full list for reconnect (accumulate, don't replace)
+        self._ticker_subs = list(existing)
         if self._public_ws:
             await self._public_ws.send(json.dumps({"op": "subscribe", "args": args}))
             logger.info("bybit_ws_subscribed_tickers", count=len(args))

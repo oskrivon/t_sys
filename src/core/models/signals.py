@@ -16,6 +16,10 @@ class SignalType(str, Enum):
     BREAKOUT = "breakout"
     RETEST = "retest"
     ZAKOL = "zakol"
+    LONG_RETEST = "long_retest"
+    SHORT_RETEST = "short_retest"
+    LONG_ZAKOL = "long_zakol"
+    SHORT_ZAKOL = "short_zakol"
     FUNDING_CAPTURE = "funding_capture"
     VOLUME_RANKING = "volume_ranking"
 
