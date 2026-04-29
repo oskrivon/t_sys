@@ -32,6 +32,7 @@ jobs:
     outputs:
       engine: ${{ steps.filter.outputs.engine }}
       screeners: ${{ steps.filter.outputs.screeners }}
+      scripts: ${{ steps.filter.outputs.scripts }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -57,10 +58,17 @@ jobs:
             echo "screeners=false" >> $GITHUB_OUTPUT
           fi
 
+          # Scripts/cron jobs: weekend, scripts (git pull only, no Docker rebuild)
+          if echo "$CHANGED" | grep -qE '^(src/weekend/|scripts/|src/paper_trading/)'; then
+            echo "scripts=true" >> $GITHUB_OUTPUT
+          else
+            echo "scripts=false" >> $GITHUB_OUTPUT
+          fi
+
   deploy:
     needs: [test, changes]
     runs-on: ubuntu-latest
-    if: needs.changes.outputs.engine == 'true' || needs.changes.outputs.screeners == 'true'
+    if: needs.changes.outputs.engine == 'true' || needs.changes.outputs.screeners == 'true' || needs.changes.outputs.scripts == 'true'
     steps:
       - uses: actions/checkout@v4
 

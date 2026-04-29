@@ -2,25 +2,85 @@
 
 ## Лог
 
-### 2026-04-27 — Weekend Ensemble: VOTE(BABA+NQ+Tech) Sharpe 2.82 (BEST STRATEGY FOUND)
+### 2026-04-29 — Новые категории предикторов: Forex, Alt/BTC, CME gap, Commodities
+
+**Тестировали:** 45 сигналов из 5 новых категорий + reference equity. Walk-forward H1/H2, correct annualization.
+
+**Новые предикторы, прошедшие OOS:**
+- **usdjpy_week** (FOREX) — H2 Sharpe_c +0.78. Carry trade = global risk appetite proxy. Лучший из forex.
+- **solbtc_fri** (ALT/BTC) — H2 Sharpe_c +0.43. Альткоин-ритейл в пятницу = weekend sentiment.
+- **copper_fri** (COMMODITY) — H2 Sharpe_c +0.40. Dr. Copper работает.
+- **copper_miners_fri** — H2 Sharpe_c +0.54.
+- **cme_btc_fri** (CME) — H2 Sharpe_c +0.14. Слабый соло, но хорош в ансамблях.
+- **tips_week** (BOND) — H2 Sharpe_c +0.50.
+
+**Не работают:** EUR/USD, GBP/USD, AUD/USD, NZD/USD, USD/CNY, ETH/BTC, CME gap (спот vs фьючерс), gold/silver ratio, TIP/TLT ratio.
+
+**Кросс-категорийные ансамбли: 30/30 прошли OOS!**
+
+Топ-5 по H2 Sharpe_net:
+1. VOTE(solbtcF+nqF+energyW) — **Sn=1.44**, avg +1.04% — бьёт оригинал!
+2. VOTE(usdjpyW+nqF+techW) — Sn=1.26
+3. VOTE(usdjpyW+copper_minersF+techW) — Sn=1.26
+4. VOTE(usdjpyW+techW+japanF) — Sn=1.14
+5. VOTE(usdjpyW+cme_btcF+techW) — Sn=1.10
+
+Оригинальный VOTE(babaF+nqF+techW) Sn=1.40 — всё ещё в топе.
+
+**Вывод:** USD/JPY (carry trade) и SOL/BTC (крипто-ритейл sentiment) — два сильнейших новых источника сигнала. Добавляют diversity к equity-only предикторам.
+
+**Скрипт:** `scripts/tmp/weekend_new_predictors.py`
+
+### 2026-04-29 — Walk-Forward OOS + скорректированные метрики (CONFIRMED, Sharpe net 1.4)
+
+**Методология:** разделили 253 выходных пополам. H1 (2021-05 — 2023-10, 126 wk) — выбор предикторов. H2 (2023-10 — 2026-04, 127 wk) — слепая проверка ТОЛЬКО выбранных. Никакого подглядывания.
+
+**Индивидуальные предикторы:**
+- 23/33 прошли OOS (70% survival rate)
+- Лучший OOS: **china_inet_fri** (KWEB) — H1 Sharpe 0.85 -> H2 Sharpe **1.35** (вырос!)
+- **japan_fri**: H1 0.96 -> H2 **1.25** (тоже вырос)
+- **tech_week**: H1 1.46 -> H2 **1.00** (удержался)
+- Провалились: sp500_week, oil_week, googl_week, baba_week, silver_week, meta_week, aapl_week
+
+**Ансамбли:**
+- **18/20 прошли OOS** (90% survival!)
+- Лучший OOS: VOTE(MSFT_week + BABA_fri + Energy_week) — H2 Sharpe raw 2.90, **correct net 1.17**
+- Median Sharpe retention H2/H1: 25.7% (ожидаемо — H1 Sharpe раздуты селекцией)
+
+**Оригинальный VOTE(BABA_fri + NQ_fri + XLK_week) — скорректированные метрики:**
+
+|  | Sharpe raw (sqrt52) | Sharpe correct (sqrt N/yr) | Sharpe net | Avg/trade net | Annual net |
+|---|---|---|---|---|---|
+| FULL (90 tr, 5yr) | 2.87 | 1.70 | **1.44** | +0.86% | **+16.8%** |
+| H1 in-sample (47 tr) | 2.85 | 1.73 | 1.49 | +0.95% | +19.9% |
+| H2 out-of-sample (43 tr) | 2.95 | 1.70 | **1.42** | +0.76% | **+14.0%** |
+
+- MaxDD (net): **-9.5%**
+- Капитал занят ~10% времени (48ч × 18 раз/год) — остальные 90% свободны
+
+**Источники инфляции Sharpe (2.9 -> 1.4):**
+1. sqrt(52) -> sqrt(18): торгуем 18 раз/год, не 52 — главный фактор (×0.59)
+2. Transaction costs 0.15%/trade (taker ×2 + spread + slippage) — съедают ~15% дохода
+3. N=43-90 трейдов — CI для Sharpe ±0.5-0.8
+
+**Вывод:** Sharpe net 1.4, годовая ~14-17% при DD -9.5%. Edge реальный и подтверждён OOS. Стратегия капиталоэффективна (90% времени капитал свободен).
+
+**Скрипт:** `scripts/tmp/weekend_walkforward.py`
+
+### 2026-04-27 — Weekend Ensemble: поиск предикторов (32 тикера × 2 сигнала)
 
 **Поиск предикторов:** 32 тикера × 2 сигнала = 64 комбинации протестировано.
 
 **Сюрпризы:**
-- **Alibaba fri** (#1 single, Sharpe 1.38) — бьёт NASDAQ (1.10). Азиатский risk sentiment.
-- **Japan fri** (#2, Sharpe 1.32) — самый сильный recent (+0.62%). Японский ритейл активен на выходных.
-- **China Internet fri** (#4, Sharpe 1.26) — улучшается во второй половине выборки.
-- Crypto-adjacent (MSTR, COIN) — посредственно (Sharpe 0.57). Слишком коррелированы с BTC.
+- **Alibaba fri** (#1 single) — бьёт NASDAQ. Азиатский risk sentiment.
+- **Japan fri** (#2) — японский ритейл активен на выходных.
+- **China Internet fri** (#4) — улучшается во второй половине выборки.
+- Crypto-adjacent (MSTR, COIN) — посредственно. Слишком коррелированы с BTC.
 - Oil, Gold, VIX — не работают или обратные.
 
-**Ensemble VOTE — прорыв:**
-- VOTE(BABA fri + NQ fri + Tech_sector week): **Sharpe 2.82**, WR 64%, avg +1.00%/trade
-- 91 трейдов за 5 лет (~18/год), MaxDD -8.6%, **profitable 6/6 years** (включая 2023!)
-- Recent (2024+) = +1.01% (edge НЕ decay'ится в ensemble)
-- CONSISTENT half-split (H1: +1.26%, H2: +0.74%)
-- Vs baseline NASDAQ week (Sharpe 1.10): improvement **2.6x**
+**Ensemble VOTE:** торгует только когда 2+ из 3 independent предикторов согласны. Фильтрует шумные сигналы. ~18 трейдов/год, profitable 6/6 years (включая 2023).
 
-**Почему ensemble лучше:** торгует только когда 2+ из 3 independent предикторов согласны. Фильтрует шумные сигналы → WR 64% vs 55%, MaxDD -8.6% vs -20.7%.
+**NB:** Raw Sharpe в этой записи был завышен (2.82) из-за sqrt(52) аннуализации — см. скорректированные метрики выше.
 
 ### 2026-04-27 — Weekend Effect: full deep dive, 3 assets, 5 years (CONFIRMED)
 

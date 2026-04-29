@@ -2,6 +2,8 @@
 
 ## Активные исследования
 
+- **Weekend Effect: Cross-Asset -> BTC** — **CONFIRMED OOS**. Sharpe net 1.4, ~14% annual. [Детали](WEEKEND_EFFECT_RESEARCH.md)
+
 - **Funding Capture HF** — **ACTIVE**. Live trading engine на Bybit. [Детали](FUNDING_CAPTURE_RESEARCH.md)
 - **Miro Strategy + Claude Vision** — **MAIN TRACK**. Screener + Claude Vision filter. Score>=7 → 75% WR на 36 trades (100 sample)
 - [Арбитраж — финальный отчёт](../data/reports/arbitrage_final_report.html) — DEAD: 6 треков проверено, все мертвы

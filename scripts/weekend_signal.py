@@ -1,222 +1,131 @@
 #!/usr/bin/env python3
-"""Weekend Ensemble Signal — VOTE(BABA fri + QQQ fri + XLK week) → BTC.
+"""Weekend 5-WAY Ensemble Signal — BTC weekend direction from cross-asset predictors.
 
-Run Friday ~21:05 UTC after NYSE close.
-Fetches BABA/QQQ/XLK prices, computes ensemble vote, sends Telegram alert.
+Predictors (OOS validated): KWEB fri, EWJ fri, XLK week, XLE week, USDJPY week.
+Signal: 3/5 majority vote -> LONG/SHORT BTC.
+Entry: Friday 21:00 UTC. Exit: Sunday 23:00 UTC. SL: 2%.
 
 Usage:
-    python scripts/weekend_signal.py            # print to console
-    python scripts/weekend_signal.py --telegram  # send alert
-    python scripts/weekend_signal.py --dry-run   # show what would happen last Friday
+    python scripts/weekend_signal.py friday              # compute & alert
+    python scripts/weekend_signal.py friday --dry-run    # use last Friday
+    python scripts/weekend_signal.py friday --historical 2026-04-18
+    python scripts/weekend_signal.py friday --no-telegram
+    python scripts/weekend_signal.py settle              # Sunday: close trade
+    python scripts/weekend_signal.py check-sl            # Sat/Sun: check stop-loss
+    python scripts/weekend_signal.py history              # show trade history
 
-Backtest: 91 trades over 5 years, WR 64%, avg +1.0%/trade,
-Sharpe 2.82, MaxDD -8.6%, profitable 6/6 years.
+Cron (server):
+    5,10,15 21 * * 5  weekend_signal.py friday
+    0 */4 * * 6,0     weekend_signal.py check-sl
+    5 23 * * 0        weekend_signal.py settle
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 import sys
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from src.weekend.config import DEFAULT_CONFIG
+from src.weekend.runner import run_friday_signal, run_sl_check, run_sunday_settlement
+from src.weekend.state import get_history, get_stats, init_db
 
-def get_signals(dry_run: bool = False) -> dict:
-    """Fetch BABA/QQQ/XLK and compute ensemble signal.
 
-    Returns dict with signal details or None if no trade.
-    """
-    import yfinance as yf
+def cmd_friday(args):
+    result = asyncio.run(run_friday_signal(
+        DEFAULT_CONFIG,
+        dry_run=args.dry_run,
+        historical=args.historical,
+        send_alert=not args.no_telegram,
+    ))
+    if not result.direction:
+        sys.exit(0)  # no trade is not an error
 
-    now = datetime.now(timezone.utc)
 
-    if dry_run:
-        # Find last Friday
-        days_since_friday = (now.weekday() - 4) % 7
-        if days_since_friday == 0 and now.hour < 21:
-            days_since_friday = 7
-        target_friday = (now - timedelta(days=days_since_friday)).replace(
-            hour=21, minute=0, second=0, microsecond=0
-        )
+def cmd_settle(args):
+    result = asyncio.run(run_sunday_settlement(
+        DEFAULT_CONFIG,
+        send_alert=not args.no_telegram,
+    ))
+    if result:
+        print(f"\nSettled: {result['pnl']:+.2f}%")
+
+
+def cmd_check_sl(args):
+    result = asyncio.run(run_sl_check(
+        DEFAULT_CONFIG,
+        send_alert=not args.no_telegram,
+    ))
+    if result:
+        print(f"\nSL HIT: {result['pnl']:+.2f}%")
     else:
-        # Must be Friday after 20:30 UTC (NYSE closed at 20:00 UTC summer / 21:00 winter)
-        if now.weekday() != 4:
-            return {"error": f"Today is {now.strftime('%A')}, not Friday"}
-        if now.hour < 20:
-            return {"error": f"NYSE not closed yet (current {now.hour}:00 UTC)"}
-        target_friday = now
+        print("OK — no SL hit")
 
-    # Fetch data: need this week's Mon-Fri
-    start_date = (target_friday - timedelta(days=7)).strftime("%Y-%m-%d")
-    end_date = (target_friday + timedelta(days=1)).strftime("%Y-%m-%d")
 
-    tickers_data = {}
-    for ticker in ["BABA", "QQQ", "XLK"]:
-        df = yf.download(ticker, start=start_date, end=end_date,
-                         interval="1d", progress=False)
-        if len(df) == 0:
-            return {"error": f"No data for {ticker}"}
-        df = df.reset_index()
-        df.columns = [c.lower() if isinstance(c, str) else c[0].lower() for c in df.columns]
-        df["date"] = df["date"].dt.tz_localize(None)
-        tickers_data[ticker] = df
-
-    # Compute signals
-    signals = {}
-
-    # BABA Friday return
-    baba = tickers_data["BABA"]
-    baba_fri = baba[baba["date"].dt.weekday == 4]
-    if len(baba_fri) == 0:
-        return {"error": "No BABA Friday data"}
-    baba_last = baba_fri.iloc[-1]
-    baba_fri_ret = (baba_last["close"] - baba_last["open"]) / baba_last["open"] * 100
-    signals["baba_fri"] = baba_fri_ret
-
-    # QQQ Friday return
-    qqq = tickers_data["QQQ"]
-    qqq_fri = qqq[qqq["date"].dt.weekday == 4]
-    if len(qqq_fri) == 0:
-        return {"error": "No QQQ Friday data"}
-    qqq_last = qqq_fri.iloc[-1]
-    qqq_fri_ret = (qqq_last["close"] - qqq_last["open"]) / qqq_last["open"] * 100
-    signals["qqq_fri"] = qqq_fri_ret
-
-    # XLK Week return (Monday open -> Friday close)
-    xlk = tickers_data["XLK"]
-    xlk_mon = xlk[xlk["date"].dt.weekday == 0]
-    xlk_fri = xlk[xlk["date"].dt.weekday == 4]
-    if len(xlk_mon) == 0 or len(xlk_fri) == 0:
-        return {"error": "No XLK week data"}
-    xlk_week_ret = (xlk_fri.iloc[-1]["close"] - xlk_mon.iloc[-1]["open"]) / xlk_mon.iloc[-1]["open"] * 100
-    signals["xlk_week"] = xlk_week_ret
-
-    # Votes
-    votes = {
-        "BABA fri": 1 if baba_fri_ret > 0 else -1,
-        "QQQ fri": 1 if qqq_fri_ret > 0 else -1,
-        "XLK week": 1 if xlk_week_ret > 0 else -1,
-    }
-
-    vote_sum = sum(votes.values())
-
-    if vote_sum >= 2:
-        direction = "LONG"
-        consensus = vote_sum
-    elif vote_sum <= -2:
-        direction = "SHORT"
-        consensus = abs(vote_sum)
-    else:
-        direction = None
-        consensus = 0
-
-    # BTC current price (for reference)
-    btc_price = None
+def cmd_history(args):
+    conn = init_db(DEFAULT_CONFIG.db_path)
     try:
-        import ccxt
-        exchange = ccxt.bybit()
-        ticker_info = exchange.fetch_ticker("BTC/USDT:USDT")
-        btc_price = ticker_info["last"]
-    except Exception:
-        pass
+        trades = get_history(conn, limit=args.limit)
+        stats = get_stats(conn)
 
-    return {
-        "date": target_friday.strftime("%Y-%m-%d"),
-        "signals": signals,
-        "votes": votes,
-        "vote_sum": vote_sum,
-        "direction": direction,
-        "consensus": consensus,
-        "btc_price": btc_price,
-        "entry_time": "Friday 21:00 UTC",
-        "exit_time": "Sunday 23:00 UTC",
-        "stop_loss": "2%",
-    }
+        if not trades:
+            print("No trades yet.")
+            return
 
+        print(f"\n{'Date':<12s} {'Dir':<6s} {'Entry':>10s} {'Exit':>10s} "
+              f"{'P&L':>8s} {'Status':<8s}")
+        print("-" * 60)
+        for t in trades:
+            entry = f"${t['entry_price']:,.0f}" if t["entry_price"] else "-"
+            exit_ = f"${t['exit_price']:,.0f}" if t["exit_price"] else "-"
+            pnl = f"{t['pnl_pct']:+.2f}%" if t["pnl_pct"] is not None else "-"
+            print(f"{t['signal_date']:<12s} {t['direction']:<6s} {entry:>10s} "
+                  f"{exit_:>10s} {pnl:>8s} {t['status']:<8s}")
 
-def format_message(result: dict) -> str:
-    """Format signal as readable message."""
-    if "error" in result:
-        return f"Weekend Signal Error: {result['error']}"
-
-    lines = []
-    lines.append("=" * 40)
-    lines.append("WEEKEND ENSEMBLE SIGNAL")
-    lines.append(f"Date: {result['date']}")
-    lines.append("=" * 40)
-    lines.append("")
-
-    # Predictors
-    signals = result["signals"]
-    votes = result["votes"]
-    lines.append("Predictors:")
-    for name, vote in votes.items():
-        key = name.lower().replace(" ", "_")
-        ret = signals.get(key, 0)
-        arrow = "UP" if vote > 0 else "DOWN"
-        lines.append(f"  {name:>10s}: {ret:+.2f}% -> {arrow}")
-
-    lines.append("")
-    lines.append(f"Vote: {result['vote_sum']:+d}/3")
-    lines.append("")
-
-    if result["direction"]:
-        emoji_dir = "LONG (buy)" if result["direction"] == "LONG" else "SHORT (sell)"
-        lines.append(f"SIGNAL: {emoji_dir} BTC")
-        lines.append(f"Consensus: {result['consensus']}/3")
-        if result["btc_price"]:
-            lines.append(f"BTC price: ${result['btc_price']:,.0f}")
-            sl_pct = 0.02
-            if result["direction"] == "LONG":
-                sl_price = result["btc_price"] * (1 - sl_pct)
-            else:
-                sl_price = result["btc_price"] * (1 + sl_pct)
-            lines.append(f"Stop-loss (2%): ${sl_price:,.0f}")
-        lines.append(f"Entry: {result['entry_time']}")
-        lines.append(f"Exit: {result['exit_time']}")
-    else:
-        lines.append("NO TRADE - no consensus (split vote)")
-
-    lines.append("")
-    lines.append("Backtest: WR 64%, Sharpe 2.82, 6/6 years profitable")
-    lines.append("=" * 40)
-
-    return "\n".join(lines)
-
-
-async def send_telegram(text: str):
-    """Send message to Telegram."""
-    from dotenv import load_dotenv
-    load_dotenv()
-
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
-
-    if not token or not chat_id:
-        print("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set")
-        return
-
-    from telegram import Bot
-    bot = Bot(token=token)
-    await bot.send_message(chat_id=chat_id, text=text)
-    print("Signal sent to Telegram")
+        if stats.get("total", 0) > 0:
+            print(f"\nStats ({stats['total']} closed):")
+            print(f"  WR: {stats['win_rate']:.0f}%  "
+                  f"Avg: {stats['avg_pnl']:+.2f}%  "
+                  f"Total: {stats['total_pnl']:+.1f}%")
+    finally:
+        conn.close()
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Weekend ensemble signal")
-    parser.add_argument("--telegram", action="store_true", help="Send to Telegram")
-    parser.add_argument("--dry-run", action="store_true", help="Use last Friday's data")
+    parser = argparse.ArgumentParser(
+        description="Weekend 5-WAY ensemble signal for BTC",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    # friday
+    p_fri = sub.add_parser("friday", help="Compute Friday signal")
+    p_fri.add_argument("--dry-run", action="store_true",
+                       help="Use last Friday's data")
+    p_fri.add_argument("--historical", type=str, default=None,
+                       help="Specific date YYYY-MM-DD")
+    p_fri.add_argument("--no-telegram", action="store_true",
+                       help="Don't send Telegram alert")
+    p_fri.set_defaults(func=cmd_friday)
+
+    # settle
+    p_set = sub.add_parser("settle", help="Sunday settlement")
+    p_set.add_argument("--no-telegram", action="store_true")
+    p_set.set_defaults(func=cmd_settle)
+
+    # check-sl
+    p_sl = sub.add_parser("check-sl", help="Check stop-loss")
+    p_sl.add_argument("--no-telegram", action="store_true")
+    p_sl.set_defaults(func=cmd_check_sl)
+
+    # history
+    p_hist = sub.add_parser("history", help="Show trade history")
+    p_hist.add_argument("--limit", type=int, default=20)
+    p_hist.set_defaults(func=cmd_history)
+
     args = parser.parse_args()
-
-    result = get_signals(dry_run=args.dry_run)
-    message = format_message(result)
-    print(message)
-
-    if args.telegram and "error" not in result:
-        asyncio.run(send_telegram(message))
+    args.func(args)
 
 
 if __name__ == "__main__":

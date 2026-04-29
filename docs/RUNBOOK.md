@@ -53,6 +53,70 @@ docker compose -f docker-compose.platform.yml down
 | notifications:telegram | все → telegram | Уведомления в TG |
 | events:trades | engine → paper, telegram | События сделок |
 
+## Weekend Signal (cron)
+
+**Стратегия:** 5-WAY VOTE(KWEB fri + EWJ fri + XLK week + XLE week + USDJPY week) -> BTC.
+**Backtest OOS:** Sharpe_net 1.83, WR 64%, annual ~25%, MaxDD -5.5%.
+
+### Cron jobs (на сервере)
+
+```cron
+# Friday signal (3 попытки с идемпотентностью)
+5 21 * * 5   cd /root/trading && python scripts/weekend_signal.py friday >> data/logs/weekend.log 2>&1
+10 21 * * 5  cd /root/trading && python scripts/weekend_signal.py friday >> data/logs/weekend.log 2>&1
+15 21 * * 5  cd /root/trading && python scripts/weekend_signal.py friday >> data/logs/weekend.log 2>&1
+
+# SL check каждые 4 часа в субботу-воскресенье
+0 */4 * * 6  cd /root/trading && python scripts/weekend_signal.py check-sl >> data/logs/weekend.log 2>&1
+0 */4 * * 0  cd /root/trading && python scripts/weekend_signal.py check-sl >> data/logs/weekend.log 2>&1
+
+# Sunday settlement
+5 23 * * 0   cd /root/trading && python scripts/weekend_signal.py settle >> data/logs/weekend.log 2>&1
+```
+
+### Команды
+
+```bash
+# Ручной dry-run (последняя пятница)
+python scripts/weekend_signal.py friday --dry-run --no-telegram
+
+# Историческая дата
+python scripts/weekend_signal.py friday --historical 2026-04-18 --no-telegram
+
+# История трейдов
+python scripts/weekend_signal.py history
+
+# Проверить SL вручную
+python scripts/weekend_signal.py check-sl --no-telegram
+```
+
+### При падении
+
+- **yfinance down:** 3 retry с exponential backoff. Если все fail — cron retry через 5/10 мин. Trade не открывается.
+- **Telegram down:** Trade записан в DB, алерт не отправлен. Ошибка в логах.
+- **Server reboot mid-weekend:** Sunday settle cron найдет open trade в SQLite и закроет нормально.
+- **Duplicate cron:** `signal_date UNIQUE` в DB — второй запуск = no-op.
+
+### Конфигурация
+
+Предикторы и параметры в `src/weekend/config.py` → `DEFAULT_CONFIG`.
+Telegram credentials в `.env` (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`).
+DB: `data/paper_trades.db` (таблица `weekend_trades`).
+
+## CI/CD (GitHub Actions)
+
+Настроен в `.github/workflows/ci.yml`. На push в master:
+
+1. **test** — pytest + coverage (min 30%)
+2. **changes** — определяет какие сервисы затронуты:
+   - `src/core/`, `src/execution/`, `src/strategies/`, `Dockerfile` → **engine**
+   - `src/screener/`, `src/strategy/`, `src/ai/` → **screener-4h, screener-1h**
+3. **deploy** — SSH на сервер → `git pull` → `docker compose up --build --no-deps <services>`
+
+Деплой автоматический, ручной рестарт **не нужен**. Просто push в master.
+
+Secrets в GitHub: `SERVER_HOST`, `SERVER_SSH_KEY`.
+
 ## Окружение
 
 - **Python:** 3.11+
