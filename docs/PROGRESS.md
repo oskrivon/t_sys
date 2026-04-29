@@ -2,6 +2,62 @@
 
 ## Лог
 
+### 2026-04-29 — Calendar Events: FOMC drift + Quarterly expiry dump (NEW STRATEGY)
+
+**Три calendar-паттерна протестированы:**
+
+**1. Pre-FOMC LONG (-8h to decision): CONFIRMED OOS**
+- BTC растёт перед FOMC (positioning risk-on в ожидании clarity)
+- Full: N=39, WR 69%, avg +0.71%, Sharpe_net 0.75
+- Walk-forward: H1 WR=68% avg=+0.88% | **H2 WR=70% avg=+0.56%** (consistent!)
+- Entry: FOMC day 10:00 UTC, Exit: 18:00 UTC. 8 раз/год. Без SL (MAE -1.07% median).
+
+**2. Post-FOMC SHORT (+24h): PARTIAL**
+- BTC падает после FOMC (profit-taking после clarity)
+- Full: WR 59%, avg +0.80%
+- Walk-forward: H1 WR=68% avg=+1.03% | H2 WR=50% avg=+0.58% (слабее на H2)
+
+**3. Post-Quarterly-Expiry SHORT (+24h): CONFIRMED OOS**
+- BTC падает после квартального опционного expiry (pin release + rebalancing)
+- Full: N=24, WR 58%, avg +0.93%, Sharpe_net 0.58
+- Walk-forward: **H1 WR=58% | H2 WR=58%** (identical — very stable)
+- Year-by-year: 5/6 лет profitable
+- Entry: expiry Friday 08:00 UTC, Exit: +24h. 4 раза/год. MaxDD -4.7%.
+
+**Calendar Portfolio (combined): Sharpe_net 1.06, ~14% annual, 20 trades/yr**
+
+Не пересекается с weekend signal по времени → стекается на тот же капитал.
+
+**Скрипты:** `scripts/tmp/macro_events_btc.py`, `scripts/tmp/fomc_expiry_deep.py`
+
+### 2026-04-29 — Big equity move -> BTC lag: intraday research (WEAK EDGE)
+
+**Гипотеза:** если NQ сильно двигается (>=2%), BTC реагирует с лагом 4-8 часов после NYSE close. Можно ли обобщить weekend effect на будни?
+
+**Результат: частично подтверждено, но edge слабый.**
+
+Основной анализ (NQ daily 5y + BTC 1H 5y):
+- NQ >=2.0% -> BTC +8h: WR 56%, avg +0.43%, **Sharpe_net 0.61** (OOS consistent: H1 0.69, H2 0.66)
+- NQ >=3.0% -> BTC +4h: WR 69%, avg +0.39% (N=29, мало)
+- Annual ~6% net, MaxDD -10% — слабее weekend effect в 3-4 раза
+
+Late session moves (NQ 1H, 2y): WR 88-100% при NQ>=1.5% late, **но N=8** — недостаточно для статистики.
+
+**Sync-прокси (BTC не отреагировал) — НЕ РАБОТАЕТ:**
+- counter_move (BTC пошёл против equity) — антисигнал, H1 Sharpe -2.4
+- low_sync (<30%) — нестабильный между режимами (H1 -2.1, H2 +0.7)
+- btc_quiet (low range) — не добавляет информации
+
+**Почему будни слабее выходных:** в будни BTC liquidity нормальная, маркет-мейкеры работают, mean reversion быстрая. Weekend liquidity vacuum — ключевой фактор edge. Без него lag "не пролонгируется".
+
+**Пятница vs будни при NQ>=1.5%:**
+- Friday: avg_net **+0.42%** (weekend effect)
+- Non-Friday: avg_net **-0.09%** (нет edge)
+
+**Вывод:** weekend effect — уникальный structural edge, обобщение на будни не работает. NQ>=2.0% standalone = 6% annual (не оправдывает отдельную стратегию). Но как подтверждение пятничного фильтра — Friday NQ>=2.0% усиливает weekend signal.
+
+**Скрипты:** `scripts/tmp/bigmove_tradfi_lag.py`, `scripts/tmp/bigmove_sync_proxy.py`
+
 ### 2026-04-29 — Новые категории предикторов: Forex, Alt/BTC, CME gap, Commodities
 
 **Тестировали:** 45 сигналов из 5 новых категорий + reference equity. Walk-forward H1/H2, correct annualization.

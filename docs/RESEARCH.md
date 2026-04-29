@@ -3,6 +3,7 @@
 ## Активные исследования
 
 - **Weekend Effect: Cross-Asset -> BTC** — **CONFIRMED OOS**. Sharpe net 1.4, ~14% annual. [Детали](WEEKEND_EFFECT_RESEARCH.md)
+- **Calendar Events: FOMC + Q-Expiry** — **CONFIRMED OOS**. Pre-FOMC LONG (WR 70%, 8/yr) + Post-Q-expiry SHORT (WR 58%, 4/yr). Combined Sharpe_net 1.06, ~14% annual. Zero overlap с weekend signal.
 
 - **Funding Capture HF** — **ACTIVE**. Live trading engine на Bybit. [Детали](FUNDING_CAPTURE_RESEARCH.md)
 - **Miro Strategy + Claude Vision** — **MAIN TRACK**. Screener + Claude Vision filter. Score>=7 → 75% WR на 36 trades (100 sample)

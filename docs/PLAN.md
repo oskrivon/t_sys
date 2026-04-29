@@ -221,6 +221,10 @@ Scale funding capture to multiple exchanges — different liquidity pools, no cr
 
 **Приоритет: LOW (research mode). Держим в голове: если найдём edge — колокация и капитал найдутся.**
 
+## Backlog — Weekend Signal Improvements
+
+- **Position scaling по consensus**: 1x при 3/5 majority, 1.5x при 5/5 unanimous. OOS данные: 5/5 WR 78%, avg_net +1.47% vs 3/5 WR 64%, avg_net +1.17%. N=9 на H2 — мало, но consistent с H1 (70%, +2.0%). Реализовать в `src/weekend/runner.py` → `config.py` добавить `unanimous_scale_factor`.
+
 ## Backlog — Прочее
 
 - Funding passive yield — 3.5-5% APR на idle capital
@@ -230,6 +234,7 @@ Scale funding capture to multiple exchanges — different liquidity pools, no cr
 - Rust core — отложен, bottleneck в стратегии а не в скорости
 - On-chain analytics — whale tracking, exchange flows, DEX volume
 - Copy trading / signal aggregation
+- **P2P premium как capital flight indicator** — гипотеза: санкции/война → capital flight через крипту → premium на P2P (рубли, лиры, риалы) растёт → BTC buying pressure. Проверка: собирать Binance P2P API цены, смотреть premium vs global price как leading indicator. Проблемы: исторических данных нет (начать собирать), N событий мало (5-10 войн/санкций за 5 лет), capital flight маскируется шумом (0.5-2% от daily volume), war = risk-off перебивает capital flight (февраль 2022 BTC -20%). **Приоритет: LOW.** Нужно 6-12 мес сбора данных прежде чем тестировать.
 
 ### Почему арбитраж отложен
 

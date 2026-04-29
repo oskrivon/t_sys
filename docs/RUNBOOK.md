@@ -62,32 +62,32 @@ docker compose -f docker-compose.platform.yml down
 
 ```cron
 # Friday signal (3 попытки с идемпотентностью)
-5 21 * * 5   cd /root/trading && python scripts/weekend_signal.py friday >> data/logs/weekend.log 2>&1
-10 21 * * 5  cd /root/trading && python scripts/weekend_signal.py friday >> data/logs/weekend.log 2>&1
-15 21 * * 5  cd /root/trading && python scripts/weekend_signal.py friday >> data/logs/weekend.log 2>&1
+5 21 * * 5   cd /root/trading && python3 scripts/weekend_signal.py friday >> data/logs/weekend.log 2>&1
+10 21 * * 5  cd /root/trading && python3 scripts/weekend_signal.py friday >> data/logs/weekend.log 2>&1
+15 21 * * 5  cd /root/trading && python3 scripts/weekend_signal.py friday >> data/logs/weekend.log 2>&1
 
 # SL check каждые 4 часа в субботу-воскресенье
-0 */4 * * 6  cd /root/trading && python scripts/weekend_signal.py check-sl >> data/logs/weekend.log 2>&1
-0 */4 * * 0  cd /root/trading && python scripts/weekend_signal.py check-sl >> data/logs/weekend.log 2>&1
+0 */4 * * 6  cd /root/trading && python3 scripts/weekend_signal.py check-sl >> data/logs/weekend.log 2>&1
+0 */4 * * 0  cd /root/trading && python3 scripts/weekend_signal.py check-sl >> data/logs/weekend.log 2>&1
 
 # Sunday settlement
-5 23 * * 0   cd /root/trading && python scripts/weekend_signal.py settle >> data/logs/weekend.log 2>&1
+5 23 * * 0   cd /root/trading && python3 scripts/weekend_signal.py settle >> data/logs/weekend.log 2>&1
 ```
 
 ### Команды
 
 ```bash
 # Ручной dry-run (последняя пятница)
-python scripts/weekend_signal.py friday --dry-run --no-telegram
+python3 scripts/weekend_signal.py friday --dry-run --no-telegram
 
 # Историческая дата
-python scripts/weekend_signal.py friday --historical 2026-04-18 --no-telegram
+python3 scripts/weekend_signal.py friday --historical 2026-04-18 --no-telegram
 
 # История трейдов
-python scripts/weekend_signal.py history
+python3 scripts/weekend_signal.py history
 
 # Проверить SL вручную
-python scripts/weekend_signal.py check-sl --no-telegram
+python3 scripts/weekend_signal.py check-sl --no-telegram
 ```
 
 ### При падении
@@ -102,6 +102,38 @@ python scripts/weekend_signal.py check-sl --no-telegram
 Предикторы и параметры в `src/weekend/config.py` → `DEFAULT_CONFIG`.
 Telegram credentials в `.env` (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`).
 DB: `data/paper_trades.db` (таблица `weekend_trades`).
+
+## Calendar Signal (cron)
+
+**Стратегия:** Pre-FOMC LONG (8h before decision) + Post-Q-Expiry SHORT (24h after quarterly options expiry).
+**Backtest OOS:** Combined Sharpe_net 1.06, WR 63%, annual ~14%, 20 trades/yr.
+
+### Cron jobs (на сервере)
+
+```cron
+# FOMC entry (usually Wednesday, but script checks event list)
+0 10 * * 3   cd /root/trading && python3 scripts/calendar_signal.py entry >> data/logs/calendar.log 2>&1
+5 10 * * 3   cd /root/trading && python3 scripts/calendar_signal.py entry >> data/logs/calendar.log 2>&1
+
+# Q-expiry entry (last Friday of Mar/Jun/Sep/Dec — script self-filters)
+0 8 * * 5    cd /root/trading && python3 scripts/calendar_signal.py entry >> data/logs/calendar.log 2>&1
+5 8 * * 5    cd /root/trading && python3 scripts/calendar_signal.py entry >> data/logs/calendar.log 2>&1
+
+# Exit check every 4h (handles both 8h FOMC and 24h expiry holds)
+0 */4 * * *  cd /root/trading && python3 scripts/calendar_signal.py exit >> data/logs/calendar.log 2>&1
+```
+
+### Команды
+
+```bash
+python3 scripts/calendar_signal.py next              # upcoming events
+python3 scripts/calendar_signal.py entry --dry-run    # test entry
+python3 scripts/calendar_signal.py history            # trade history
+```
+
+### Обновление дат
+
+FOMC и Q-expiry даты захардкожены в `src/calendar_signal/config.py`. Обновлять раз в год при публикации нового календаря ФРС.
 
 ## CI/CD (GitHub Actions)
 

@@ -58,8 +58,8 @@ jobs:
             echo "screeners=false" >> $GITHUB_OUTPUT
           fi
 
-          # Scripts/cron jobs: weekend, scripts (git pull only, no Docker rebuild)
-          if echo "$CHANGED" | grep -qE '^(src/weekend/|scripts/|src/paper_trading/)'; then
+          # Scripts/cron jobs: weekend, calendar, scripts (git pull only, no Docker rebuild)
+          if echo "$CHANGED" | grep -qE '^(src/weekend/|src/calendar_signal/|scripts/|src/paper_trading/)'; then
             echo "scripts=true" >> $GITHUB_OUTPUT
           else
             echo "scripts=false" >> $GITHUB_OUTPUT
