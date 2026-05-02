@@ -2,6 +2,130 @@
 
 ## Лог
 
+### 2026-05-02 — Counter-Funding Mean Reversion: DEBUNKED (directional bias)
+
+**Initial result:** WR 82%, net +0.95%/trade, 25 стратегий прошли walk-forward. Слишком хорошо.
+
+**Sanity checks выявили:**
+1. **100% short bias** — все 82 трейда при >50bps были SHORT. Extreme funding на micro-cap всегда отрицательный (shorts платят в pump). "Counter" = SHORT = шорт после сквиза.
+2. **Не mean reversion, а continuation** — цена НЕ разворачивается. При negative funding (pump) цена продолжает падать после settlement. WR "reversal" = 17% (т.е. 83% continuation).
+3. **H2 деградирует** — SHORT-only walk-forward: H1 net +0.23%, H2 net +0.03%. С учётом slippage 0.25% — убыточно.
+4. **Permutation test прошёл** (p=0.0000, 3.9 sigma) — edge реальный, но это directional bias, не structural.
+5. **LONG сторона не проверена** — N=0 при >50bps positive funding. В бычьем рынке стратегия может не работать.
+
+**Вывод:** красивые числа — артефакт bearish micro-cap режима Feb-Apr 2026. Не structural edge. Закрыто.
+
+**Continuation dump:** тоже проверен — ALL FAIL. "Continuation" = зеркало counter-trade, та же directional bias наоборот.
+
+**"Sell to bots" (enter T-5m, exit T-1m close):** ALL FAIL. Pre-settlement drift = 0% (шум). Рынок не anticipates settlement.
+
+**Ключевая находка — minute-by-minute drift при >50bps:**
+- T-5m...T-2m: ~0% (random walk, no anticipation)
+- T-1m: **+0.14% WR 68%** — боты реально двигают цену в последнюю минуту
+- T+0m: **-0.67% WR 17%** — settlement dump (directional bias, не structural)
+
+Bot impact (+0.14%) реальный, но **меньше fee+slippage (0.26%)**. На минутных данных untradeable. Для эксплуатации нужен sub-second entry за 10-30 сек до settlement → colocation territory.
+
+**Урок:** permutation test + walk-forward недостаточны без direction split. Всегда проверять % long vs short и тестировать стороны отдельно.
+
+### 2026-05-02 — Three bot-exploit strategies research
+
+**A. Post-Listing Dump (13 Bybit listings, Sep 2025 — Apr 2026):**
+- Avg spike: +12% (range 0-20%), peak обычно на 5-55 мин
+- Short@10min→30min: avg +2.5%, но N=13 и WR баг. Частота ~22/year — мало.
+- В бэклог: нужен парсер анонсов + больше данных.
+
+**B. Round-Number Level Exhaustion (2209 round vs 972 non-round breaks):**
+- Round breaks: follow-through WR 51% stable через 4h/8h/12h
+- Non-round breaks: WR 43-47%, decays to 43% at 8h
+- Grid боты "тормозят" round-number пробой (break size 1.09% vs 1.27%), но когда пробивает — continuation лучше
+- Actionable: добавить `level_is_round` feature в Miro ML. Low priority.
+
+**C. MM Spread Widening (56 book snapshots at T-2s):**
+- Spreads 5-25bps перед settlement vs нормальные 1-2bps — MMs уходят
+- Идея: limit orders в расширенный спред как temporary MM
+- Нужна orderbook WS инфра для real-time monitoring. В бэклог.
+
+**Скрипты:** `scripts/tmp/three_bot_strategies.py`
+
+**Скрипты:** `scripts/tmp/counter_sanity_check.py`, `scripts/tmp/microcap_frontrun_analysis.py`
+
+### 2026-05-02 — Counter-Funding Mean Reversion: initial result (SUPERSEDED — see above)
+
+**Гипотеза:** боты создают предсказуемый price impact вокруг funding settlement. Можно ли торговать against/with them?
+
+**Данные:** 4045 settlements × 17 micro-cap монет × 3 месяца (Feb-Apr 2026), 1m candles T-5m...T+5m, funding rates через Bybit API.
+
+**Результат front-run ботов (with-bot): FAIL на всех конфигурациях.**
+- На liquid монетах (BTC, ETH, SOL): 3780 settlements — нет drift, нет edge
+- На micro-cap: with-bot стратегия убыточна (WR 22-38%)
+
+**Результат counter-bot (OPPOSITE to funding direction): CONFIRMED OOS!**
+
+Walk-forward H1/H2, 25 стратегий прошли:
+
+| Стратегия | Thr | H1 net | H2 net | H2 WR | H2 N | Est $/мо на $250 |
+|---|---|---|---|---|---|---|
+| Counter T-1m→T+2m | >50bps | +0.51% | +0.95% | 82% | 61 | $97 |
+| Counter T0→T+1m | >50bps | +0.73% | +0.69% | 79% | 61 | $71 |
+| Counter T-1m→T+1m | >50bps | +0.39% | +0.64% | 79% | 61 | $65 |
+| Counter T-1m→T+2m | >20bps | +0.61% | +0.48% | 70% | 144 | $115 |
+
+**Механизм:** extreme funding = extreme positioning (все на одной стороне). Settlement триггерит mean reversion — цена откатывает в сторону, противоположную crowded trade. Не бот-front-running, а структурный mean reversion.
+
+**6 consistent монет (H1>0 И H2>0 при >10bps):**
+- SIREN: 70 trades, WR 80%, net +0.43%, avg_fund 50.7bps
+- SOON: 14 trades, WR 100%, net +1.01%, avg_fund 35.8bps
+- GODS: 7 trades, WR 100%, net +1.05%, avg_fund 59.5bps
+- ORCA: 10 trades, WR 80%, net +0.38%, avg_fund 57.3bps
+- ESP: 14 trades, WR 71%, net +0.18%, avg_fund 30.3bps
+- ENSO: 33 trades, WR 65%, net +0.15%, avg_fund 36.7bps
+
+**Совместимость с текущим funding capture:** можно делать оба — сначала собрать funding credit, потом counter-trade на reversal. Двойной доход с одного settlement.
+
+**Caveats:**
+- N=61 для >50bps — OK, но не огромная выборка
+- Per-coin N маленькие (7-70), нужно больше данных
+- Micro-cap liquidity: slippage при $250+ notional не проверен
+- Нужен live test 2-4 недели перед scale up
+
+**Скрипты:** `scripts/tmp/frontrun_bots.py`, `scripts/tmp/download_microcap_fast.py`, `scripts/tmp/microcap_frontrun_analysis.py`
+**Данные:** `data/reports/microcap_settlements.csv` (4045 settlements), `data/reports/settlement_candles_3m.csv` (4991 settlements liquid coins)
+
+### 2026-05-02 — Funding capture live: 78 trades, 10 days, ~breakeven
+
+**Engine live stats (Apr 22 — May 2):**
+- 78 trades, 7.8/day, 46 unique micro-cap coins
+- Price-only PnL: -32.7% (slippage доминирует)
+- Net PnL (price + funding - fees): **-1.1%** (~breakeven)
+- Net WR: 50%, profitable days 4/10
+- Avg funding: 51.5 bps, but avg price impact: -42 bps → funding почти полностью съедается
+
+**Book depth analysis (56 trades with data):**
+- Deep books (Q4, $38k): net +0.11% vs thin books (Q1, $391): net -0.04%
+- Spread >5bps → worse results (r=-0.157)
+- N=56 недостаточно для robust фильтра, нужно 100-150+
+
+**Weekend signal: первый live trade** — LONG BTC $77,868 (May 1), 4/5 predictors, PnL +0.48% к моменту анализа.
+
+**Вывод по scale-up:** $300-400 на Bybit достаточно для всех стратегий (leverage позволяет). $500 yolo = разумный micro-live test. НО сначала: depth filter, weekend auto-execution, counter-trade integration.
+
+### 2026-04-29 — Portfolio estimate: weekend + calendar stack ~25-27% annual
+
+**Combined strategy stack (без funding capture, на $10k):**
+
+| Стратегия | Trades/yr | Avg net/trade | Annual contribution | Capital use |
+|---|---|---|---|---|
+| Weekend 5-WAY | 18 | +0.86% | +16.8% | 10% времени |
+| FOMC pre-LONG | 8 | +0.57% | +4.6% | 0.7% |
+| FOMC post-SHORT | 8 | +0.65% | +5.3% | 2.2% |
+| Q-expiry SHORT | 4 | +0.78% | +3.2% | 1.1% |
+| **Total** | **38** | — | **~30% gross** | **~14%** |
+
+С поправкой на корреляцию (~10-15%): **~25-27% net annual**. Капитал занят 14% времени, остальные 86% свободны.
+
+**Сравнение с хедж-фондами:** по % return = top 10-25% HF (Citadel/Two Sigma territory). По Sharpe 1.2-1.5 = top 25%. Но: scale $10k vs $10B, один актив (BTC), 3-4 паттерна, 0 live track record. Первые 6-12 мес live покажут реальность edge.
+
 ### 2026-04-29 — Calendar Events: FOMC drift + Quarterly expiry dump (NEW STRATEGY)
 
 **Три calendar-паттерна протестированы:**

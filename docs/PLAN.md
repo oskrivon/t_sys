@@ -137,9 +137,24 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 
 ## TODO
 
+### Scale-up prep (к 2026-05-09)
+- [ ] **Weekend signal → live execution** — автоматическое открытие/закрытие BTC perp по сигналу вместо записи в DB. Min lot 0.001 BTC (~$78), позиция $200-500 через конфиг.
+- [ ] **Funding depth data collection** — продолжать собирать book_t2s, к ~100+ трейдам построить depth filter + adaptive sizing. Текущие 56 трейдов недостаточно.
+
+### ~~Post-Settlement Continuation Dump~~ CLOSED
+- [x] Проверено: continuation = зеркало counter-trade, та же directional bias. ALL FAIL с realistic costs.
+- [x] "Sell to bots" (enter T-5m, exit T-1m): ALL FAIL — no pre-settlement anticipation drift.
+- [x] Bot impact confirmed: +0.14% за T-1m candle (WR 68%), но < fee+slippage (0.26%). Untradeable без colocation.
+
+### Colocation HFT feasibility estimate (research)
+- [ ] **Посчитать ROI colocation для funding bot-front-run.** Данные: bot impact +0.14%/event, ~352 events/year (>50bps), 17 coins. Colocation ~$35k/year. Вопрос: при каком капитале colocation окупается? Учесть: (1) sub-second entry улучшает fill vs 1m candle, (2) реальный capture rate (не 100% events), (3) market impact при scale up, (4) сравнить с просто увеличением капитала в текущих стратегиях.
+
 ### Phase 1: Core Infrastructure (продолжение)
 - [ ] Реализовать WebSocket коннекторы для real-time данных
 - [ ] Запустить и протестировать docker-compose (TimescaleDB + Redis)
+
+### Round-number level filter for Miro (LOW priority)
+- [ ] **Добавить `is_round_number` вес в ML features.** Данные: 2209 round-number breaks vs 972 non-round. Round breaks: follow-through WR 51% (stable через 4h/8h/12h) vs non-round WR 43-47% (decays). Break size чуть меньше (1.09% vs 1.27%) — grid боты тормозят, но когда пробивает, continuation лучше. Реализация: добавить binary feature `level_is_round` в ML pipeline. Не отдельная стратегия, а фильтр.
 
 ### Phase 2: Data Collection
 - [ ] Collectors для orderbook, trades, candles
@@ -225,6 +240,12 @@ Scale funding capture to multiple exchanges — different liquidity pools, no cr
 
 - **Position scaling по consensus**: 1x при 3/5 majority, 1.5x при 5/5 unanimous. OOS данные: 5/5 WR 78%, avg_net +1.47% vs 3/5 WR 64%, avg_net +1.17%. N=9 на H2 — мало, но consistent с H1 (70%, +2.0%). Реализовать в `src/weekend/runner.py` → `config.py` добавить `unanimous_scale_factor`.
 
+## Backlog — Bot Exploits
+
+- **Post-Listing Dump Short** — шорт micro-cap через 10 мин после Bybit листинга. 13 листингов за 7 мес: avg spike +12%, short@10min→30min avg +2.5%. Проблемы: N=13 (мало), нужен парсер анонсов (Telegram/RSS), шорт может быть заблокирован >10 мин, WR подсчёт сомнительный. Частота ~22/год. **Приоритет: LOW.** Ждём парсер анонсов + больше данных.
+- **MM Spread Exploitation** — когда ММ уходят перед settlement (spread 5-25bps vs нормальные 1-2bps), ставить limit orders в расширенный спред как temporary MM. Profit = spread - fees если обе стороны fill. Risk: one-sided fill. Нужно: real-time spread monitoring через WS, cancel logic после settlement. **Приоритет: LOW.** Требует orderbook WS инфры.
+- **Colocation HFT for funding bot front-run** — bot impact +0.14%/event при >50bps funding, 352 events/year. Colocation ~$35k/yr. Breakeven ~$71k notional/trade. **Приоритет: VERY LOW.** Требует ~$100k капитала для окупаемости.
+
 ## Backlog — Прочее
 
 - Funding passive yield — 3.5-5% APR на idle capital
@@ -234,6 +255,7 @@ Scale funding capture to multiple exchanges — different liquidity pools, no cr
 - Rust core — отложен, bottleneck в стратегии а не в скорости
 - On-chain analytics — whale tracking, exchange flows, DEX volume
 - Copy trading / signal aggregation
+- **Tokenized stocks (xStocks) weekend monitoring** — xStocks (Backed Finance) торгуются 24/7 на Solana/Kraken. Когда ликвидность вырастет: (1) собирать weekend premium/discount xSPY/xQQQ vs Friday close как real-time sentiment предиктор для BTC weekend, (2) мониторить weekend spread/depth как ранний сигнал умирания нашего weekend edge (если spread сужается — 24/7 equity price discovery убивает lag), (3) whale wallet tracking on-chain для "informed weekend trading". Данные: Kraken API (бесплатный, public endpoints), Bitquery GraphQL (Solana on-chain), StocksOnSolana.com. NB: айсберги NYSE через xStocks не видны — orderbooks раздельные, информация течёт NYSE->xStocks. **Приоритет: LOW.** Ждём пока xStocks weekend volume станет значимым.
 - **P2P premium как capital flight indicator** — гипотеза: санкции/война → capital flight через крипту → premium на P2P (рубли, лиры, риалы) растёт → BTC buying pressure. Проверка: собирать Binance P2P API цены, смотреть premium vs global price как leading indicator. Проблемы: исторических данных нет (начать собирать), N событий мало (5-10 войн/санкций за 5 лет), capital flight маскируется шумом (0.5-2% от daily volume), war = risk-off перебивает capital flight (февраль 2022 BTC -20%). **Приоритет: LOW.** Нужно 6-12 мес сбора данных прежде чем тестировать.
 
 ### Почему арбитраж отложен
