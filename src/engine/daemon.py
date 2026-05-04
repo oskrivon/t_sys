@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -330,13 +332,24 @@ class TradingEngine:
         return adapter
 
     async def _health_check_loop(self) -> None:
+        heartbeat_path = Path("/tmp/engine_heartbeat")
         while not self._shutdown_event.is_set():
             await asyncio.sleep(300)
+            # Write heartbeat — external watchdog can check staleness
+            try:
+                heartbeat_path.write_text(str(time.time()))
+            except OSError:
+                pass
             if self.ws and not self.ws.is_connected:
                 logger.error("health_ws_disconnected")
                 await self._notify("WARNING: WebSocket disconnected!")
             if self.executor:
-                await self.executor.sync_positions()
+                try:
+                    await asyncio.wait_for(
+                        self.executor.sync_positions(), timeout=30
+                    )
+                except asyncio.TimeoutError:
+                    logger.error("health_sync_timeout")
             # Update Redis status
             if self.redis_bus:
                 pos_count = self.positions.count

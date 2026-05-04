@@ -150,24 +150,36 @@ class BybitWebSocket(WebSocketFeed):
         await asyncio.gather(*tasks)
 
     async def _recv_loop(self, ws: ClientConnection, label: str) -> None:
+        consecutive_timeouts = 0
         while self._running:
             try:
                 raw = await asyncio.wait_for(ws.recv(), timeout=30)
                 self._stats["messages_received"] += 1
+                consecutive_timeouts = 0
                 data = json.loads(raw)
                 await self._handle_message(data, label)
             except asyncio.TimeoutError:
+                consecutive_timeouts += 1
                 # No message in 30s — send ping to keep alive
                 try:
                     await ws.send(json.dumps({"op": "ping"}))
                 except Exception:
                     await self._reconnect(label)
                     ws = self._public_ws if label == "public" else self._private_ws
+                    consecutive_timeouts = 0
+                # If 6 consecutive timeouts (3 min no data) — force reconnect
+                if consecutive_timeouts >= 6:
+                    logger.error("bybit_ws_dead", label=label,
+                                 timeouts=consecutive_timeouts)
+                    await self._reconnect(label)
+                    ws = self._public_ws if label == "public" else self._private_ws
+                    consecutive_timeouts = 0
             except websockets.ConnectionClosed:
                 logger.warning("bybit_ws_closed", label=label)
                 if self._running:
                     await self._reconnect(label)
                     ws = self._public_ws if label == "public" else self._private_ws
+                    consecutive_timeouts = 0
             except Exception:
                 logger.exception("bybit_ws_recv_error", label=label)
                 await asyncio.sleep(1)
