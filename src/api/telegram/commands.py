@@ -12,31 +12,60 @@ from src.core.models.signals import EngineCommand
 
 logger = structlog.get_logger()
 
+# Expected services — name must match start_heartbeat() calls
+_SERVICES = [
+    "redis",
+    "screener-4h",
+    "screener-1h",
+    "paper-trading",
+    "engine",
+    "telegram-bot",
+]
+
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show engine and paper trading status."""
+    """Show full platform health: all services + engine details."""
     bus: RedisBus = context.bot_data.get("redis_bus")
     if not bus:
         await update.message.reply_text("Redis not connected")
         return
 
-    # Request status from engine via Redis
+    lines = ["=== Platform Status ===\n"]
+
+    # 1. Service heartbeats
+    for svc in _SERVICES:
+        if svc == "redis":
+            # Redis is alive if we can talk to it
+            lines.append("[OK] redis")
+            continue
+
+        ts = await bus.get(f"heartbeat:{svc}")
+        if ts:
+            # Parse timestamp, show age
+            try:
+                beat = datetime.fromisoformat(ts)
+                age = (datetime.now(timezone.utc) - beat).total_seconds()
+                if age < 120:
+                    lines.append(f"[OK] {svc}  ({int(age)}s ago)")
+                else:
+                    lines.append(f"[SLOW] {svc}  (last beat {int(age)}s ago)")
+            except ValueError:
+                lines.append(f"[OK] {svc}")
+        else:
+            lines.append(f"[DOWN] {svc}")
+
+    # 2. Engine details
     cmd = EngineCommand(command="status")
     await bus.publish(CH_COMMANDS_ENGINE, cmd.to_redis(), source="telegram")
 
-    # Get cached status from Redis KV (engine writes it periodically)
     status = await bus.get("engine:status")
-    paper_status = await bus.get("paper:status")
-
-    lines = ["=== Trading Platform ===\n"]
-
     if status:
-        lines.append(f"Engine: {status}")
-    else:
-        lines.append("Engine: no status (not running?)")
+        lines.append(f"\n--- Engine ---\n{status}")
 
-    if paper_status:
-        lines.append(f"Paper: {paper_status}")
+    # 3. Paper trading summary
+    paper_stats = await bus.get("paper:stats")
+    if paper_stats:
+        lines.append(f"\n--- Paper ---\n{paper_stats}")
 
     await update.message.reply_text("\n".join(lines))
 
@@ -125,7 +154,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Trading Platform Commands\n"
         "========================\n\n"
         "Monitoring:\n"
-        "  /status — engine status, active strategies, WS connection\n"
+        "  /status — platform health (all services, engine, paper)\n"
         "  /positions — list open live positions (symbol, side, entry)\n"
         "  /balance — account balance on Bybit\n"
         "  /paper — paper trading statistics (WR, PnL, trades)\n\n"

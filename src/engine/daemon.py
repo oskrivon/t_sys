@@ -70,6 +70,7 @@ class TradingEngine:
             from src.core.redis_bus import RedisBus
             self.redis_bus = RedisBus(self._redis_url)
             await self.redis_bus.connect()
+            self.redis_bus.start_heartbeat("engine")
 
         # 3. Telegram notifier (direct — for when Redis not available)
         if self._tg_token and self._tg_chat_id:

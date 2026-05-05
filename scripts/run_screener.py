@@ -82,6 +82,8 @@ async def main(args):
             from src.core.redis_bus import RedisBus
             redis_bus = RedisBus(redis_url)
             await redis_bus.connect()
+            tf = os.getenv("SCREENER_TIMEFRAME", "4h")
+            redis_bus.start_heartbeat(f"screener-{tf}")
             log.info("redis_bus_ready", url=redis_url)
         except Exception as e:
             log.warning("redis_bus_not_available", error=str(e))

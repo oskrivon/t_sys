@@ -44,6 +44,7 @@ class TelegramService:
         # Connect Redis
         self._bus = RedisBus(self._redis_url)
         await self._bus.connect()
+        self._bus.start_heartbeat("telegram-bot")
 
         # Subscribe to notifications channel
         self._bus.on(CH_NOTIFICATIONS_TG, self._on_notification)

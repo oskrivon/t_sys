@@ -41,6 +41,7 @@ class PaperTradingService:
 
         # Connect Redis
         await self._bus.connect()
+        self._bus.start_heartbeat("paper-trading")
 
         # Subscribe to signals from screener and engine strategies
         self._bus.on(CH_SIGNALS_SCREENER, self._on_screener_signal)

@@ -140,3 +140,34 @@ class RedisBus:
             await self._redis.set(key, value, ex=ex)
         else:
             await self._redis.set(key, value)
+
+    async def keys(self, pattern: str) -> list[str]:
+        """Return keys matching *pattern*."""
+        return await self._redis.keys(pattern)
+
+    async def ttl(self, key: str) -> int:
+        """Return TTL of a key in seconds (-1 = no expiry, -2 = missing)."""
+        return await self._redis.ttl(key)
+
+    # ------------------------------------------------------------------
+    # Heartbeat
+    # ------------------------------------------------------------------
+
+    def start_heartbeat(self, service_name: str, interval: int = 30) -> None:
+        """Spawn a background task that sets heartbeat:<service_name> every *interval* seconds.
+
+        The key has a TTL of 3× interval so it expires if the service stops.
+        """
+        ttl = interval * 3
+
+        async def _beat() -> None:
+            while self._running or not self._pubsub:  # also run before run()
+                try:
+                    ts = datetime.now(timezone.utc).isoformat()
+                    await self._redis.set(f"heartbeat:{service_name}", ts, ex=ttl)
+                except Exception:
+                    logger.warning("heartbeat_write_failed", service=service_name)
+                await asyncio.sleep(interval)
+
+        self._running = True  # ensure loop runs even without pubsub
+        asyncio.get_event_loop().create_task(_beat())
