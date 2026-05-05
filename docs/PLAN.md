@@ -189,7 +189,7 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 - [x] **ML threshold снижен** — 4h: 0.25→0.15, 1h: 0.40→0.20. Backtest: 200 signals/35d (WR 49%).
 - [x] **Daily Digest** — cron 08:00 UTC → Telegram. Docker health, funding stats, screener scans, volume ranking.
 - [x] **Volume Ranking paper mode** — enabled в engine, daily 00:05 UTC, targets в engine_state.db.
-- [ ] **Redis DNS fix** — screeners не могут подключиться к Redis (`Error -3 connecting to redis:6379`). Paper-trading сервис не получает сигналы. Нужно проверить docker network.
+- [x] **Redis DNS fix** — Redis был запущен вне compose (сеть `bridge` вместо `trading_default`). Пересоздан через compose, скринеры подключились. Сигналы теперь публикуются в Redis.
 
 ### Data collection in progress
 
