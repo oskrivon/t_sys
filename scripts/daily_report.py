@@ -50,7 +50,7 @@ def get_funding_report() -> str:
 
     # Last 24h closes
     recent_closes = conn.execute(
-        "SELECT pnl, metadata, symbol, timestamp FROM trades_log "
+        "SELECT pnl, metadata, symbol, timestamp, qty FROM trades_log "
         "WHERE strategy_id='funding_capture' AND action='close' AND timestamp > ?",
         (cutoff_24h,),
     ).fetchall()
@@ -124,8 +124,14 @@ def _sum_funding(rows) -> float:
         try:
             meta = json.loads(r["metadata"]) if r["metadata"] else {}
             funding_bps = meta.get("funding_bps", 0)
-            qty = float(r.get("qty", 0) or 0) if hasattr(r, "__getitem__") else 0
             entry_price = float(meta.get("entry_price", 0) or 0)
+            qty = float(meta.get("qty", 0) or 0)
+            if not qty:
+                # Try from row directly
+                try:
+                    qty = float(r["qty"] or 0)
+                except (KeyError, TypeError, ValueError):
+                    pass
             if funding_bps and entry_price and qty:
                 total += funding_bps / 10000 * entry_price * qty
         except (json.JSONDecodeError, ValueError, TypeError):
