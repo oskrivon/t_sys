@@ -19,7 +19,7 @@ from src.core.redis_bus import (
 )
 from src.core.models.signals import ScreenerSignal
 from src.paper_trading import db
-from src.paper_trading.stats import compute_stats, format_stats
+from src.paper_trading.stats import compute_stats
 
 logger = structlog.get_logger()
 
