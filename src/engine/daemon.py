@@ -237,11 +237,12 @@ class TradingEngine:
         """Factory: create strategy instance by ID."""
         if sid == "funding_capture":
             return FundingCaptureStrategy(config, self.event_bus)
+        if sid == "volume_ranking":
+            from src.strategies.volume_ranking import VolumeRankingStrategy
+            return VolumeRankingStrategy(config)
         # Add more strategies here as they become ready:
         # if sid == "miro_breakout":
         #     return MiroStrategy(config)
-        # if sid == "volume_ranking":
-        #     return VolumeRankingStrategy(config)
         logger.warning("unknown_strategy", strategy_id=sid)
         return None
 

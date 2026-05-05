@@ -29,9 +29,12 @@ strategies:
       vision_min_score: 8
 
   volume_ranking:
-    enabled: false
+    enabled: true
     type: systematic
-    allocation_pct: 50.0
+    allocation_pct: 0.0          # paper only — no real capital allocated
     max_positions: 20
     params:
       schedule: "1d"
+      short_window: 7
+      long_window: 30
+      top_pct: 0.5

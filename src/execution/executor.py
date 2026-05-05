@@ -56,6 +56,12 @@ class ExecutionManager:
 
     async def _on_signal(self, event: Event) -> None:
         signal = event.data
+
+        # Rebalance events: log targets for paper tracking, no execution
+        if isinstance(signal, dict) and signal.get("type") == "rebalance":
+            await self._log_rebalance(signal)
+            return
+
         if not isinstance(signal, TradeSignal):
             return
 
@@ -380,6 +386,27 @@ class ExecutionManager:
                             strategy=strategy_id)
 
         await self._notify(f"REBALANCE {strategy_id}: {len(targets)} targets")
+
+    # ------------------------------------------------------------------
+    # Paper rebalance logging
+    # ------------------------------------------------------------------
+
+    async def _log_rebalance(self, signal: dict) -> None:
+        """Log rebalance targets to state DB for paper tracking."""
+        strategy_id = signal.get("strategy_id", "unknown")
+        targets = signal.get("targets", [])
+        if not targets:
+            return
+        for target in targets:
+            self._state.log_trade(
+                symbol=target.symbol,
+                strategy_id=strategy_id,
+                side=target.side.value,
+                action="paper_target",
+                metadata={"weight": target.weight, "score": target.score},
+            )
+        logger.info("rebalance_paper_logged",
+                    strategy=strategy_id, targets=len(targets))
 
     # ------------------------------------------------------------------
     # Helpers
