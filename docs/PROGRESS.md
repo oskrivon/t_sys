@@ -22,10 +22,21 @@
 - Screeners: scans, alerts, ML filtered
 - Volume ranking: paper targets
 
-**Найденные проблемы при аудите:**
+**Redis DNS fix:**
+- Redis был запущен вне compose (сеть `bridge` вместо `trading_default`)
+- Скринеры не резолвили DNS-имя `redis` → fallback без Redis
+- Пересоздан через compose → скринеры подключились, сигналы идут в Redis
+
+**Maker/Limit exit analysis — REJECTED:**
+- Limit exit fill rate всего 18% (цена идёт против нас в 82% случаев)
+- Экономия +1.4 bps/trade — шум при adverse move -50 bps
+- Maker entry хуже: раннее размещение (+8 сек exposure) добавляет риск drift
+- Вывод: оптимизация fee бессмысленна при hold 2-30 сек, фокус на фильтрации и Binance
+
+**Найденные проблемы при аудите (все исправлены):**
 - Engine рестартовался 8 раз за сутки (watchdog каждые 5 мин)
-- Screeners 0 сигналов за 11 дней (breakout state + ML threshold)
-- Redis был down у скринеров (DNS resolution error)
+- Screeners 0 сигналов за 11 дней (breakout state + ML threshold) → fixed
+- Redis был down у скринеров (DNS) → fixed
 - `trades_log_server.json` не обновлялся 9 дней (данные были в engine_state.db)
 
 ### 2026-05-05 — Funding Capture: Depth/Spread Analysis (76 trades OOS)

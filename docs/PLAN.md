@@ -137,10 +137,26 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 
 ## TODO
 
-### Scale-up prep (к 2026-05-09)
-- [ ] **Weekend signal → live execution** — автоматическое открытие/закрытие BTC perp по сигналу вместо записи в DB. Min lot 0.001 BTC (~$78), позиция $200-500 через конфиг.
-- [ ] **Funding depth data collection** — продолжать собирать book_t2s, к ~100+ filtered трейдам (сейчас 29). Нужно ещё ~34 дней для 80% power (Cohen d=0.34). **Данные:** сервер `engine_state.db` (таблица `trades_log`), локальная копия `data/trades_log_server.json` (обновлять: `ssh root@<SERVER_HOST>` → SELECT из SQLite).
-- [ ] **Funding hard filter: spread >= 9 bps → reject** — внедрить в engine. Этот квартиль даёт -$53 из -$52 total loss, p<0.0001 на корреляции. Безусловный reject, не требует дополнительных данных для обоснования.
+### Next steps (после сессии 2026-05-05)
+
+**Ближайшие (можно делать сейчас):**
+- [ ] **Funding hard filter: spread >= 9 bps → reject** — внедрить в engine. Квартиль spread>9 даёт -$53 из -$52 total loss, p<0.0001. Безусловный reject.
+- [ ] **Engine restart loop** — разобраться почему watchdog рестартует engine каждые 5 мин (8+ раз/сутки). Возможно WS disconnect → watchdog убивает → restart → repeat.
+
+**Ждём данных (~30-40 дней):**
+- [ ] **Funding depth data collection** — продолжаем собирать book_t2s. Сейчас 29 filtered trades, нужно ~70 для 80% power (Cohen d=0.34). **Данные:** сервер `engine_state.db` → `trades_log`, локальная копия `data/trades_log_server.json`.
+- [ ] **Screener signal collection** — с новым threshold (0.15/0.20) и breakout fix ждём signals + paper trades через Redis. Первый 4h scan 2026-05-05 16:00 UTC.
+- [ ] **Volume Ranking paper data** — первый daily tick 2026-05-06 00:05 UTC. Через 30+ дней — анализ P&L.
+
+**Scale-up (когда данные подтвердят):**
+- [ ] **Weekend signal → live execution** — автоматическое открытие/закрытие BTC perp по сигналу вместо записи в DB.
+- [ ] **Binance funding capture** — fees 2bps vs 5.5 Bybit, books 15-65x deeper. Экономия 14 bps RT > всех limit order оптимизаций.
+- [ ] **Referral Rebate** — создать субаккаунт через свой реферал = -30% к fees. Сделать при scale up.
+
+**Отклонённые идеи (2026-05-05):**
+- ~~Limit/maker exit~~ — fill rate 18%, экономия +1.4 bps/trade при adverse move -50 bps. Шум.
+- ~~Maker entry~~ — ранний вход добавляет exposure (+8 сек drift risk), не окупает 8 bps fee saving.
+- ~~Увеличение капитала до $100~~ — 83% трейдов превысят L1 depth (median $42). Slippage вырастет нелинейно.
 
 ### ~~Post-Settlement Continuation Dump~~ CLOSED
 - [x] Проверено: continuation = зеркало counter-trade, та же directional bias. ALL FAIL с realistic costs.
