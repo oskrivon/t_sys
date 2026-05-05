@@ -103,6 +103,29 @@ python3 scripts/weekend_signal.py check-sl --no-telegram
 Telegram credentials в `.env` (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`).
 DB: `data/paper_trades.db` (таблица `weekend_trades`).
 
+## Daily Digest (cron)
+
+**Что:** Health check всех сервисов + stats по стратегиям → Telegram.
+
+```cron
+0 8 * * *    cd /root/trading && python3 scripts/daily_report.py --telegram >> data/logs/daily_report.log 2>&1
+```
+
+**Покрывает:**
+- Docker containers status + Redis
+- Engine restart count (WARNING если >3/24h)
+- Funding capture: 24h trades, WR, funding earned, staleness warning
+- Screeners: scan count, alerts, ML filtered
+- Volume ranking: paper targets
+
+```bash
+# Ручной запуск (консоль)
+python3 scripts/daily_report.py
+
+# Ручной запуск (Telegram)
+python3 scripts/daily_report.py --telegram
+```
+
 ## Calendar Signal (cron)
 
 **Стратегия:** Pre-FOMC LONG (8h before decision) + Post-Q-Expiry SHORT (24h after quarterly options expiry).
