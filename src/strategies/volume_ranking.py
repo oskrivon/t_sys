@@ -32,7 +32,7 @@ class VolumeRankingStrategy(Strategy):
     async def initialize(self, exchange) -> None:
         if not self.symbols:
             # Default: top 50 USDT pairs
-            markets = exchange.load_markets()
+            markets = await exchange.load_markets()
             usdt = [s for s, m in markets.items()
                     if s.endswith("/USDT") and m.get("spot") and m.get("active")]
             self.symbols = usdt[:50]
