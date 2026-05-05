@@ -171,6 +171,9 @@ class TradingEngine:
                     tg.create_task(t)
         except* KeyboardInterrupt:
             pass
+        except* Exception as eg:
+            logger.error("engine_taskgroup_crashed",
+                         errors=[repr(e) for e in eg.exceptions])
         finally:
             await self.shutdown()
 
@@ -337,29 +340,32 @@ class TradingEngine:
         heartbeat_path = Path("/tmp/engine_heartbeat")
         while not self._shutdown_event.is_set():
             await asyncio.sleep(300)
-            # Write heartbeat — external watchdog can check staleness
             try:
-                heartbeat_path.write_text(str(time.time()))
-            except OSError:
-                pass
-            if self.ws and not self.ws.is_connected:
-                logger.error("health_ws_disconnected")
-                await self._notify("WARNING: WebSocket disconnected!")
-            if self.executor:
+                # Write heartbeat — external watchdog can check staleness
                 try:
-                    await asyncio.wait_for(
-                        self.executor.sync_positions(), timeout=30
-                    )
-                except asyncio.TimeoutError:
-                    logger.error("health_sync_timeout")
-            # Update Redis status
-            if self.redis_bus:
-                pos_count = self.positions.count
-                await self.redis_bus.set("engine:status",
-                    f"running | {len(self._strategies)} strategies | {pos_count} positions",
-                    ex=600)
-                bal_text = f"${self._total_capital} (config)"
-                await self.redis_bus.set("engine:balance", bal_text, ex=600)
+                    heartbeat_path.write_text(str(time.time()))
+                except OSError:
+                    pass
+                if self.ws and not self.ws.is_connected:
+                    logger.error("health_ws_disconnected")
+                    await self._notify("WARNING: WebSocket disconnected!")
+                if self.executor:
+                    try:
+                        await asyncio.wait_for(
+                            self.executor.sync_positions(), timeout=30
+                        )
+                    except (asyncio.TimeoutError, Exception) as e:
+                        logger.error("health_sync_error", error=repr(e))
+                # Update Redis status
+                if self.redis_bus:
+                    pos_count = self.positions.count
+                    await self.redis_bus.set("engine:status",
+                        f"running | {len(self._strategies)} strategies | {pos_count} positions",
+                        ex=600)
+                    bal_text = f"${self._total_capital} (config)"
+                    await self.redis_bus.set("engine:balance", bal_text, ex=600)
+            except Exception:
+                logger.exception("health_check_error")
 
     async def _wait_shutdown(self) -> None:
         await self._shutdown_event.wait()
