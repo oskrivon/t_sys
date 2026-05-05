@@ -44,7 +44,7 @@ def get_funding_report() -> str:
 
     # All closes
     all_closes = conn.execute(
-        "SELECT pnl, metadata FROM trades_log "
+        "SELECT pnl, metadata, qty FROM trades_log "
         "WHERE strategy_id='funding_capture' AND action='close'"
     ).fetchall()
 
