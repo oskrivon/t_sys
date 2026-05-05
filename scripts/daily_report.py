@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Daily portfolio report — Telegram + console.
+"""Daily digest — health check + stats for all strategies.
 
-Aggregates stats from both strategies and sends to Telegram.
+Reads engine_state.db, docker container status, screener logs.
+Sends summary to Telegram.
 
 Usage:
     python scripts/daily_report.py            # print to console
     python scripts/daily_report.py --telegram  # send to Telegram
+
+Cron (server):
+    0 8 * * *  cd /root/trading && python3 scripts/daily_report.py --telegram >> data/logs/daily_report.log 2>&1
 """
 from __future__ import annotations
 
@@ -13,114 +17,309 @@ import argparse
 import asyncio
 import json
 import sqlite3
+import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.paper_trading import db as paper_db
-from src.paper_trading.stats import compute_stats
-
+ENGINE_DB = Path("data/engine_state.db")
 PAPER_DB = Path("data/paper_trades.db")
-VR_DB = Path("data/volume_ranking_paper.db")
 
 
-def get_miro_report() -> str:
-    """Generate Miro strategy report."""
-    conn = paper_db.get_connection(PAPER_DB)
-    stats = compute_stats(conn)
+# ------------------------------------------------------------------
+# Funding Capture
+# ------------------------------------------------------------------
 
-    open_trades = paper_db.get_open_trades(conn)
-    recent = paper_db.get_closed_trades(conn)[:5]
-    conn.close()
+def get_funding_report() -> str:
+    """Funding capture stats from engine_state.db (last 24h + all time)."""
+    if not ENGINE_DB.exists():
+        return "--- FUNDING CAPTURE ---\nDB not found."
 
-    lines = [
-        "--- MIRO S/R + ML + Vision ---",
-        f"Trades: {stats.total} ({stats.open} open, {stats.closed} closed)",
-        f"Win rate: {stats.win_rate:.1f}% ({stats.wins}W / {stats.losses}L)",
-        f"Profit factor: {stats.profit_factor:.2f}",
-        f"Total P&L: {stats.total_pnl_pct:+.2f}%",
-        f"Expectancy: {stats.expectancy_pct:+.2f}%/trade",
-    ]
-
-    if open_trades:
-        lines.append(f"\nOpen ({len(open_trades)}):")
-        for t in open_trades[:5]:
-            ml = f"ML:{t['ml_score']:.0%}" if t["ml_score"] else ""
-            vs = f"V:{t['vision_score']}" if t["vision_score"] else ""
-            lines.append(
-                f"  {t['symbol']} {t['direction'].upper()} "
-                f"@ {t['entry_price']:.8g} {ml} {vs}"
-            )
-
-    if recent:
-        lines.append(f"\nRecent closed:")
-        for t in recent:
-            icon = "W" if t["pnl_pct"] and t["pnl_pct"] > 0 else "L"
-            pnl = f"{t['pnl_pct']:+.2f}%" if t["pnl_pct"] is not None else "?"
-            lines.append(f"  [{icon}] {t['symbol']} {pnl}")
-
-    return "\n".join(lines)
-
-
-def get_volume_ranking_report() -> str:
-    """Generate Volume Ranking report."""
-    if not VR_DB.exists():
-        return "--- VOLUME RANKING ---\nNot started yet."
-
-    conn = sqlite3.connect(str(VR_DB))
+    conn = sqlite3.connect(str(ENGINE_DB))
     conn.row_factory = sqlite3.Row
 
-    # Current positions
-    snap = conn.execute(
-        "SELECT * FROM daily_snapshots ORDER BY date DESC LIMIT 1"
+    cutoff_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+
+    # All closes
+    all_closes = conn.execute(
+        "SELECT pnl, metadata FROM trades_log "
+        "WHERE strategy_id='funding_capture' AND action='close'"
+    ).fetchall()
+
+    # Last 24h closes
+    recent_closes = conn.execute(
+        "SELECT pnl, metadata, symbol, timestamp FROM trades_log "
+        "WHERE strategy_id='funding_capture' AND action='close' AND timestamp > ?",
+        (cutoff_24h,),
+    ).fetchall()
+
+    # Last trade timestamp
+    last_trade = conn.execute(
+        "SELECT timestamp FROM trades_log "
+        "WHERE strategy_id='funding_capture' ORDER BY id DESC LIMIT 1"
     ).fetchone()
 
-    # P&L history
-    pnl_rows = conn.execute("SELECT * FROM daily_pnl ORDER BY date DESC").fetchall()
-
-    lines = ["--- VOLUME RANKING L/S ---"]
-
-    if snap:
-        positions = json.loads(snap["positions_json"])
-        n_longs = sum(1 for v in positions.values() if v == "long")
-        n_shorts = len(positions) - n_longs
-        lines.append(f"Date: {snap['date']}")
-        lines.append(f"Positions: {n_longs} longs, {n_shorts} shorts")
-        lines.append(f"Turnover: {snap['turnover_pct']:.1f}%")
-
-    if pnl_rows:
-        total_net = sum(r["net_pnl_pct"] for r in pnl_rows)
-        n_days = len(pnl_rows)
-        win_days = sum(1 for r in pnl_rows if r["net_pnl_pct"] > 0)
-        avg_daily = total_net / n_days if n_days > 0 else 0
-
-        lines.append(f"\nP&L ({n_days} days):")
-        lines.append(f"Total: {total_net:+.2f}%")
-        lines.append(f"Win days: {win_days}/{n_days} ({win_days/n_days*100:.0f}%)")
-        lines.append(f"Avg daily: {avg_daily:+.3f}%")
-
-        # Last 5 days
-        lines.append(f"\nLast 5 days:")
-        for r in pnl_rows[:5]:
-            lines.append(f"  {r['date']}: {r['net_pnl_pct']:+.3f}% (cum: {r['cumulative_pnl_pct']:+.2f}%)")
-    else:
-        lines.append("No P&L data yet (need 2+ days)")
+    # Volume ranking paper targets
+    vr_targets = conn.execute(
+        "SELECT timestamp FROM trades_log "
+        "WHERE strategy_id='volume_ranking' AND action='paper_target' "
+        "ORDER BY id DESC LIMIT 1"
+    ).fetchone()
 
     conn.close()
+
+    lines = ["--- FUNDING CAPTURE ---"]
+
+    if last_trade:
+        lines.append(f"Last trade: {last_trade['timestamp'][:16]}")
+    else:
+        lines.append("Last trade: NEVER")
+
+    # 24h stats
+    if recent_closes:
+        pnls_24h = _parse_pnls(recent_closes)
+        funding_24h = _sum_funding(recent_closes)
+        lines.append(f"\nLast 24h: {len(recent_closes)} closes")
+        if pnls_24h:
+            wins = sum(1 for p in pnls_24h if p > 0)
+            lines.append(f"  WR: {wins}/{len(pnls_24h)} ({wins/len(pnls_24h)*100:.0f}%)")
+            lines.append(f"  Price PnL: {sum(pnls_24h):+.3f}%")
+        lines.append(f"  Funding earned: ${funding_24h:.4f}")
+    else:
+        lines.append("\nLast 24h: 0 closes")
+        # Check how long since last trade
+        if last_trade:
+            last_ts = datetime.fromisoformat(last_trade["timestamp"])
+            hours_ago = (datetime.now(timezone.utc) - last_ts).total_seconds() / 3600
+            if hours_ago > 12:
+                lines.append(f"  WARNING: no trades in {hours_ago:.0f}h")
+
+    # All time
+    if all_closes:
+        pnls_all = _parse_pnls(all_closes)
+        funding_all = _sum_funding(all_closes)
+        lines.append(f"\nAll time: {len(all_closes)} closes")
+        if pnls_all:
+            wins = sum(1 for p in pnls_all if p > 0)
+            lines.append(f"  WR: {wins}/{len(pnls_all)} ({wins/len(pnls_all)*100:.0f}%)")
+            lines.append(f"  Funding earned: ${funding_all:.4f}")
+
     return "\n".join(lines)
 
 
+def _parse_pnls(rows) -> list[float]:
+    result = []
+    for r in rows:
+        pnl = r["pnl"]
+        if pnl and "%" in pnl:
+            result.append(float(pnl.replace("%", "")))
+    return result
+
+
+def _sum_funding(rows) -> float:
+    total = 0.0
+    for r in rows:
+        try:
+            meta = json.loads(r["metadata"]) if r["metadata"] else {}
+            funding_bps = meta.get("funding_bps", 0)
+            qty = float(r.get("qty", 0) or 0) if hasattr(r, "__getitem__") else 0
+            entry_price = float(meta.get("entry_price", 0) or 0)
+            if funding_bps and entry_price and qty:
+                total += funding_bps / 10000 * entry_price * qty
+        except (json.JSONDecodeError, ValueError, TypeError):
+            pass
+    return total
+
+
+# ------------------------------------------------------------------
+# Screener
+# ------------------------------------------------------------------
+
+def get_screener_report() -> str:
+    """Screener health from docker logs (last 24h)."""
+    lines = ["--- SCREENERS ---"]
+
+    for name, container in [("4h", "miro-screener-4h"), ("1h", "miro-screener-1h")]:
+        try:
+            result = subprocess.run(
+                ["docker", "logs", "--since", "24h", container],
+                capture_output=True, text=True, timeout=10,
+            )
+            log_text = result.stdout + result.stderr
+
+            scans = log_text.count("scan_complete")
+            alerts = log_text.count("alert_sent")
+            signals = sum(
+                1 for line in log_text.split("\n")
+                if "scan_complete" in line and "signals=0" not in line
+            )
+            errors = log_text.count("error")
+            ml_filtered = log_text.count("signal_below_ml_threshold")
+
+            lines.append(f"\n{name} screener:")
+            lines.append(f"  Scans: {scans}, Signals found: {signals}, Alerts: {alerts}")
+            if ml_filtered:
+                lines.append(f"  ML filtered: {ml_filtered}")
+            if errors > 0:
+                lines.append(f"  Errors: {errors}")
+            if scans == 0:
+                lines.append("  WARNING: 0 scans in 24h!")
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            lines.append(f"\n{name} screener: UNREACHABLE")
+
+    return "\n".join(lines)
+
+
+# ------------------------------------------------------------------
+# Docker Health
+# ------------------------------------------------------------------
+
+def get_docker_health() -> str:
+    """Docker container status."""
+    lines = ["--- INFRASTRUCTURE ---"]
+
+    try:
+        result = subprocess.run(
+            ["docker", "compose", "-f", "docker-compose.platform.yml", "ps",
+             "--format", "json"],
+            capture_output=True, text=True, timeout=10,
+        )
+        # docker compose ps --format json outputs one JSON per line
+        containers = []
+        for line in result.stdout.strip().split("\n"):
+            if line.strip():
+                try:
+                    containers.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
+
+        if containers:
+            for c in containers:
+                name = c.get("Name", c.get("name", "?"))
+                state = c.get("State", c.get("state", "?"))
+                status = c.get("Status", c.get("status", "?"))
+                icon = "OK" if state == "running" else "DOWN"
+                lines.append(f"  [{icon}] {name}: {status}")
+        else:
+            # Fallback: plain text
+            result2 = subprocess.run(
+                ["docker", "compose", "-f", "docker-compose.platform.yml", "ps"],
+                capture_output=True, text=True, timeout=10,
+            )
+            lines.append(result2.stdout[:500] if result2.stdout else "No containers")
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        lines.append("  Docker not available")
+
+    # Redis check
+    try:
+        result = subprocess.run(
+            ["docker", "exec", "trading-redis", "redis-cli", "ping"],
+            capture_output=True, text=True, timeout=5,
+        )
+        redis_ok = "PONG" in result.stdout
+        lines.append(f"  Redis: {'OK' if redis_ok else 'DOWN'}")
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        lines.append("  Redis: UNKNOWN")
+
+    # Engine restart count
+    try:
+        result = subprocess.run(
+            ["docker", "logs", "--since", "24h", "trading-engine"],
+            capture_output=True, text=True, timeout=10,
+        )
+        restarts = (result.stdout + result.stderr).count("engine_starting")
+        if restarts > 3:
+            lines.append(f"  WARNING: engine restarted {restarts}x in 24h")
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+
+    return "\n".join(lines)
+
+
+# ------------------------------------------------------------------
+# Volume Ranking
+# ------------------------------------------------------------------
+
+def get_volume_ranking_report() -> str:
+    """Volume ranking paper targets from engine_state.db."""
+    if not ENGINE_DB.exists():
+        return "--- VOLUME RANKING ---\nDB not found."
+
+    conn = sqlite3.connect(str(ENGINE_DB))
+    conn.row_factory = sqlite3.Row
+
+    # Last rebalance
+    last = conn.execute(
+        "SELECT timestamp FROM trades_log "
+        "WHERE strategy_id='volume_ranking' AND action='paper_target' "
+        "ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+
+    # Today's targets
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    targets = conn.execute(
+        "SELECT symbol, side, metadata FROM trades_log "
+        "WHERE strategy_id='volume_ranking' AND action='paper_target' "
+        "AND timestamp LIKE ?",
+        (f"{today}%",),
+    ).fetchall()
+
+    conn.close()
+
+    lines = ["--- VOLUME RANKING (paper) ---"]
+
+    if last:
+        lines.append(f"Last rebalance: {last['timestamp'][:16]}")
+    else:
+        lines.append("Last rebalance: NEVER (waiting for first 00:05 UTC tick)")
+
+    if targets:
+        longs = [t for t in targets if t["side"] == "long"]
+        shorts = [t for t in targets if t["side"] == "short"]
+        lines.append(f"Today: {len(longs)}L / {len(shorts)}S")
+
+        # Top 3 by score
+        scored = []
+        for t in targets:
+            try:
+                meta = json.loads(t["metadata"]) if t["metadata"] else {}
+                scored.append((t["symbol"].split("/")[0], t["side"], meta.get("score", 0)))
+            except (json.JSONDecodeError, ValueError):
+                pass
+        scored.sort(key=lambda x: x[2], reverse=True)
+        if scored:
+            top3 = ", ".join(f"{s[0]}({s[2]:.2f})" for s in scored[:3])
+            bot3 = ", ".join(f"{s[0]}({s[2]:.2f})" for s in scored[-3:])
+            lines.append(f"  Top vol accel: {top3}")
+            lines.append(f"  Bottom: {bot3}")
+    else:
+        if not last:
+            lines.append("Waiting for first daily tick...")
+        else:
+            lines.append("No targets today")
+
+    return "\n".join(lines)
+
+
+# ------------------------------------------------------------------
+# Full Report
+# ------------------------------------------------------------------
+
 def get_full_report() -> str:
-    """Generate full portfolio report."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    header = f"=== Portfolio Report {now} ==="
+    header = f"=== Daily Digest {now} ==="
 
-    miro = get_miro_report()
-    vr = get_volume_ranking_report()
+    sections = [
+        header,
+        get_docker_health(),
+        get_funding_report(),
+        get_screener_report(),
+        get_volume_ranking_report(),
+    ]
 
-    return f"{header}\n\n{miro}\n\n{vr}"
+    return "\n\n".join(sections)
 
 
 async def send_telegram(text: str):
@@ -138,7 +337,6 @@ async def send_telegram(text: str):
 
     from telegram import Bot
     bot = Bot(token=token)
-    # Split if too long
     if len(text) > 4000:
         for i in range(0, len(text), 4000):
             await bot.send_message(chat_id=chat_id, text=text[i:i+4000])
