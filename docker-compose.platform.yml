@@ -33,7 +33,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       SCREENER_TIMEFRAME: "4h"
       SCREENER_D1_MODE: "d1_only"
-      SCREENER_ML_THRESHOLD: "0.25"
+      SCREENER_ML_THRESHOLD: "0.15"
       SCREENER_MODEL_PATH: "data/models/miro_gb_d1.joblib"
       SCREENER_STATE_FILE: "data/state/screener_4h.json"
     depends_on:
@@ -57,7 +57,7 @@ services:
       SCREENER_RETEST_WINDOW: "6"
       SCREENER_MIN_LEVEL_AGE: "6"
       SCREENER_RR_RATIO: "2.0"
-      SCREENER_ML_THRESHOLD: "0.40"
+      SCREENER_ML_THRESHOLD: "0.20"
       SCREENER_MODEL_PATH: "data/models/miro_gb_1h_scalp.joblib"
       SCREENER_STATE_FILE: "data/state/screener_1h.json"
       SCREENER_CANDLE_CLOSE_DELAY_SEC: "15"

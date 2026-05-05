@@ -305,10 +305,10 @@ class MiroScreener:
 
         # Detect breakouts and update state
         new_breakouts = detect_breakouts(df, current_idx, levels)
-        saved_breakouts = self._get_saved_breakouts(symbol, current_idx)
+        saved_breakouts = self._get_saved_breakouts(symbol, df)
         saved_breakouts.extend(new_breakouts)
         saved_breakouts = [b for b in saved_breakouts if current_idx - b.idx <= cfg.retest_window]
-        self._save_breakouts(symbol, saved_breakouts, current_idx)
+        self._save_breakouts(symbol, saved_breakouts, df)
 
         # Find best signal
         best = find_best_signal(
@@ -336,14 +336,34 @@ class MiroScreener:
 
         return [signal]
 
-    def _get_saved_breakouts(self, symbol: str, current_idx: int) -> list[Breakout]:
+    def _get_saved_breakouts(self, symbol: str, df: pd.DataFrame) -> list[Breakout]:
         states = self.state.recent_breakouts.get(symbol, [])
-        return [s.to_breakout() for s in states]
+        if not states:
+            return []
+        # Build ts -> idx lookup to remap breakout indices after restart
+        ts_to_idx: dict[str, int] = {}
+        if "ts" in df.columns:
+            for i, t in enumerate(df["ts"]):
+                ts_to_idx[str(t)] = i
+        result = []
+        for s in states:
+            if not s.candle_ts:
+                continue  # legacy state without timestamp — discard
+            new_idx = ts_to_idx.get(s.candle_ts)
+            if new_idx is None:
+                continue  # candle fell out of 210-candle window
+            s.idx = new_idx
+            result.append(s.to_breakout())
+        return result
 
-    def _save_breakouts(self, symbol: str, breakouts: list[Breakout], current_idx: int) -> None:
-        self.state.recent_breakouts[symbol] = [
-            BreakoutState.from_breakout(b) for b in breakouts
-        ]
+    def _save_breakouts(self, symbol: str, breakouts: list[Breakout], df: pd.DataFrame) -> None:
+        states = []
+        for b in breakouts:
+            ts = ""
+            if 0 <= b.idx < len(df) and "ts" in df.columns:
+                ts = str(df["ts"].iloc[b.idx])
+            states.append(BreakoutState.from_breakout(b, candle_ts=ts))
+        self.state.recent_breakouts[symbol] = states
 
     async def _get_vision_score(self, signal: Signal, df: pd.DataFrame) -> Optional[int]:
         from src.ai.chart_generator import generate_chart

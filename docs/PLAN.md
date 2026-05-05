@@ -139,7 +139,8 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 
 ### Scale-up prep (к 2026-05-09)
 - [ ] **Weekend signal → live execution** — автоматическое открытие/закрытие BTC perp по сигналу вместо записи в DB. Min lot 0.001 BTC (~$78), позиция $200-500 через конфиг.
-- [ ] **Funding depth data collection** — продолжать собирать book_t2s, к ~100+ трейдам построить depth filter + adaptive sizing. Текущие 56 трейдов недостаточно.
+- [ ] **Funding depth data collection** — продолжать собирать book_t2s, к ~100+ filtered трейдам (сейчас 29). Нужно ещё ~34 дней для 80% power (Cohen d=0.34). **Данные:** сервер `engine_state.db` (таблица `trades_log`), локальная копия `data/trades_log_server.json` (обновлять: `ssh root@<SERVER_HOST>` → SELECT из SQLite).
+- [ ] **Funding hard filter: spread >= 9 bps → reject** — внедрить в engine. Этот квартиль даёт -$53 из -$52 total loss, p<0.0001 на корреляции. Безусловный reject, не требует дополнительных данных для обоснования.
 
 ### ~~Post-Settlement Continuation Dump~~ CLOSED
 - [x] Проверено: continuation = зеркало counter-trade, та же directional bias. ALL FAIL с realistic costs.
@@ -188,7 +189,7 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 
 ### Data collection in progress
 
-- [ ] **Orderbook T-2s snapshot analysis** — collecting book_t2s (bid1/ask1/bid5/ask5, spread) in trades_log metadata since 2026-04-24. After 50+ trades, analyze: does book depth at T-2s correlate with net PnL / slippage? If yes, add as entry filter or adaptive qty sizing.
+- [ ] **Orderbook T-2s snapshot analysis** — collecting book_t2s (bid1/ask1/bid5/ask5, spread) in trades_log metadata since 2026-04-24. 76 trades with book_t2s ready for analysis. Analyze: does book depth at T-2s correlate with net PnL / slippage? If yes, add as entry filter or adaptive qty sizing. **Данные:** сервер `<SERVER_HOST>:/root/trading/data/engine_state.db` → таблица `trades_log`, поле `metadata.book_t2s`. Локальная копия: `data/trades_log_server.json`.
 
 ### Tier 3 — next up after funding capture stabilization
 

@@ -2,6 +2,37 @@
 
 ## Лог
 
+### 2026-05-05 — Funding Capture: Depth/Spread Analysis (76 trades OOS)
+
+**Данные:** 76 closes с book_t2s (22 Apr - 5 May), engine_state.db на сервере. Локальная копия: `data/trades_log_server.json`.
+
+**P&L breakdown ($25 notional, 10x lev):**
+- Funding earned: +$425 (avg $5.59/trade)
+- Slippage: -$394 (avg -$5.18/trade)  
+- Fees (11bps RT): -$84
+- NET: -$52 total
+
+**Корреляции:**
+- `spread_bps vs slippage`: r=-0.47, p<0.0001 — **достоверно**
+- `depth5 vs slippage`: r=0.08, p=0.50 — NOT significant (мало данных)
+
+**Train/Test split (38/38):**
+- Фильтр на train: spread<5 + depth5>$1000 → avg +$0.77/trade
+- На test: avg -$0.07 (breakeven), WR 71%. Не cherry-pick, но и не profit.
+- Rejected trades (spread>9): -$54 из -$52 total loss. Фильтр отсекает убытки достоверно.
+
+**Доверительные интервалы:**
+- Best filter (spread<5, depth5>$1000): mean=$0.77, 95% CI [-$0.10, +$1.63], p=0.08
+- Bootstrap P(mean>0) = 97%, но формально not significant
+- Cohen d = 0.34 → нужно **~70 filtered trades** (34 дня) для 80% power
+
+**Масштабирование до $100 notional:** НЕ рекомендуется.
+- 83% трейдов: order > L1 depth (median L1 = $42)
+- Slippage вырастет нелинейно при ratio > 1x
+- Безопасных трейдов всего 11/76
+
+**Решение:** hard filter `spread >= 9 bps` → reject. Продолжаем собирать данные. Масштабирование через Binance (deeper books), не через увеличение size на Bybit.
+
 ### 2026-05-02 — Counter-Funding Mean Reversion: DEBUNKED (directional bias)
 
 **Initial result:** WR 82%, net +0.95%/trade, 25 стратегий прошли walk-forward. Слишком хорошо.
