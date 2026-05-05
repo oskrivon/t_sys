@@ -185,7 +185,11 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 - [x] **Fee Rebate Mining (MM)** — ORANGE. Bybit: 121 пар со spread >4bps, est $10-15/day. Binance: rebate -2.5bps (profit on any fill). Но это отдельная MM система — high effort.
 
 ### Screener observability
-- [ ] **Add verbose logging to screener scan pipeline** — log levels found, breakouts detected, retest candidates, ML scores per symbol. Currently only outputs `signals=0` with no visibility into the funnel. Both 4h and 1h screeners alive but 0 signals since 2026-04-22 restart — unclear if market is quiet or filters too strict.
+- [x] **Breakout persistence fix** — breakout state теперь ремапится через candle_ts, переживает рестарт контейнера.
+- [x] **ML threshold снижен** — 4h: 0.25→0.15, 1h: 0.40→0.20. Backtest: 200 signals/35d (WR 49%).
+- [x] **Daily Digest** — cron 08:00 UTC → Telegram. Docker health, funding stats, screener scans, volume ranking.
+- [x] **Volume Ranking paper mode** — enabled в engine, daily 00:05 UTC, targets в engine_state.db.
+- [ ] **Redis DNS fix** — screeners не могут подключиться к Redis (`Error -3 connecting to redis:6379`). Paper-trading сервис не получает сигналы. Нужно проверить docker network.
 
 ### Data collection in progress
 

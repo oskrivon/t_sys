@@ -2,6 +2,32 @@
 
 ## Лог
 
+### 2026-05-05 — Screener fixes + Volume Ranking paper + Daily Digest
+
+**Screener breakout persistence fix:**
+- Breakout state хранил DataFrame idx, который терялся при рестарте контейнера (idx сдвигался)
+- Теперь breakouts ремапятся через `candle_ts` → корректный idx после рестарта
+- ML threshold снижен: 4h 0.25→0.15, 1h 0.40→0.20
+- Backtest: 200 сигналов/35d (WR 49%) vs 105 при старом threshold (WR 53%)
+
+**Volume Ranking запущен в paper mode:**
+- Включена в engine (`config/strategies.yml`), scheduler запускает daily в 00:05 UTC
+- Targets логируются в `engine_state.db` как `paper_target` (без реальных ордеров)
+- 50 монет, top 50% long / bottom 50% short по volume acceleration (7d/30d)
+
+**Daily Digest в Telegram:**
+- Cron 08:00 UTC → `scripts/daily_report.py --telegram`
+- Docker health, Redis, engine restarts
+- Funding: 24h trades, WR, funding earned, staleness warning
+- Screeners: scans, alerts, ML filtered
+- Volume ranking: paper targets
+
+**Найденные проблемы при аудите:**
+- Engine рестартовался 8 раз за сутки (watchdog каждые 5 мин)
+- Screeners 0 сигналов за 11 дней (breakout state + ML threshold)
+- Redis был down у скринеров (DNS resolution error)
+- `trades_log_server.json` не обновлялся 9 дней (данные были в engine_state.db)
+
 ### 2026-05-05 — Funding Capture: Depth/Spread Analysis (76 trades OOS)
 
 **Данные:** 76 closes с book_t2s (22 Apr - 5 May), engine_state.db на сервере. Локальная копия: `data/trades_log_server.json`.
