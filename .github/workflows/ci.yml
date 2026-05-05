@@ -32,6 +32,8 @@ jobs:
     outputs:
       engine: ${{ steps.filter.outputs.engine }}
       screeners: ${{ steps.filter.outputs.screeners }}
+      telegram: ${{ steps.filter.outputs.telegram }}
+      paper: ${{ steps.filter.outputs.paper }}
       scripts: ${{ steps.filter.outputs.scripts }}
     steps:
       - uses: actions/checkout@v4
@@ -44,31 +46,54 @@ jobs:
           echo "Changed files:"
           echo "$CHANGED"
 
-          # Engine: core, execution, strategies, config, Dockerfile
-          if echo "$CHANGED" | grep -qE '^(src/core/|src/execution/|src/strategies/|config/|Dockerfile|pyproject.toml)'; then
+          # Shared code used by ALL containers — rebuild everything
+          if echo "$CHANGED" | grep -qE '^(src/core/|Dockerfile|pyproject.toml)'; then
             echo "engine=true" >> $GITHUB_OUTPUT
-          else
-            echo "engine=false" >> $GITHUB_OUTPUT
-          fi
-
-          # Screeners: screener, strategy (signals/levels/features), ai
-          if echo "$CHANGED" | grep -qE '^(src/screener/|src/strategy/|src/ai/|config/|Dockerfile|pyproject.toml)'; then
             echo "screeners=true" >> $GITHUB_OUTPUT
-          else
-            echo "screeners=false" >> $GITHUB_OUTPUT
-          fi
-
-          # Scripts/cron jobs: weekend, calendar, scripts (git pull only, no Docker rebuild)
-          if echo "$CHANGED" | grep -qE '^(src/weekend/|src/calendar_signal/|scripts/|src/paper_trading/)'; then
+            echo "telegram=true" >> $GITHUB_OUTPUT
+            echo "paper=true" >> $GITHUB_OUTPUT
             echo "scripts=true" >> $GITHUB_OUTPUT
           else
-            echo "scripts=false" >> $GITHUB_OUTPUT
+            # Engine: execution, strategies, engine, config
+            if echo "$CHANGED" | grep -qE '^(src/engine/|src/execution/|src/strategies/|config/)'; then
+              echo "engine=true" >> $GITHUB_OUTPUT
+            else
+              echo "engine=false" >> $GITHUB_OUTPUT
+            fi
+
+            # Screeners: screener, strategy (signals/levels/features), ai, run_screener
+            if echo "$CHANGED" | grep -qE '^(src/screener/|src/strategy/|src/ai/|scripts/run_screener)'; then
+              echo "screeners=true" >> $GITHUB_OUTPUT
+            else
+              echo "screeners=false" >> $GITHUB_OUTPUT
+            fi
+
+            # Telegram bot
+            if echo "$CHANGED" | grep -qE '^(src/api/telegram/|scripts/run_telegram)'; then
+              echo "telegram=true" >> $GITHUB_OUTPUT
+            else
+              echo "telegram=false" >> $GITHUB_OUTPUT
+            fi
+
+            # Paper trading
+            if echo "$CHANGED" | grep -qE '^(src/paper_trading/|scripts/run_paper_trading)'; then
+              echo "paper=true" >> $GITHUB_OUTPUT
+            else
+              echo "paper=false" >> $GITHUB_OUTPUT
+            fi
+
+            # Scripts/cron jobs: weekend, calendar (git pull only, no Docker rebuild)
+            if echo "$CHANGED" | grep -qE '^(src/weekend/|src/calendar_signal/|scripts/)'; then
+              echo "scripts=true" >> $GITHUB_OUTPUT
+            else
+              echo "scripts=false" >> $GITHUB_OUTPUT
+            fi
           fi
 
   deploy:
     needs: [test, changes]
     runs-on: ubuntu-latest
-    if: needs.changes.outputs.engine == 'true' || needs.changes.outputs.screeners == 'true' || needs.changes.outputs.scripts == 'true'
+    if: needs.changes.outputs.engine == 'true' || needs.changes.outputs.screeners == 'true' || needs.changes.outputs.telegram == 'true' || needs.changes.outputs.paper == 'true' || needs.changes.outputs.scripts == 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -88,6 +113,12 @@ jobs:
             fi
             if [ "${{ needs.changes.outputs.screeners }}" = "true" ]; then
               SERVICES="$SERVICES screener-4h screener-1h"
+            fi
+            if [ "${{ needs.changes.outputs.telegram }}" = "true" ]; then
+              SERVICES="$SERVICES telegram-bot"
+            fi
+            if [ "${{ needs.changes.outputs.paper }}" = "true" ]; then
+              SERVICES="$SERVICES paper-trading"
             fi
             if [ -n "$SERVICES" ]; then
               docker compose -f docker-compose.platform.yml up -d --build --no-deps $SERVICES
