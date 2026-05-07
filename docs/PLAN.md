@@ -153,31 +153,30 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 Binance — главный блокер для scale. Fees 8 bps RT vs 11, книги 2.8x глубже (median), до 107x на отдельных монетах. При $1k: fit_L20=78% vs Bybit 8%.
 
 **Шаг 1 — BinanceWebSocket** (`src/core/websocket/binance_ws.py`):
-- [ ] WS endpoints: `wss://fstream.binance.com/ws/<listenKey>` (private), `wss://fstream.binance.com/stream` (public)
-- [ ] Auth: REST `POST /fapi/v1/listenKey` -> получить listenKey, keep-alive каждые 30 мин
-- [ ] Public topics: `<symbol>@markPrice` (содержит fundingRate, nextFundingTime)
-- [ ] Private topics: `ACCOUNT_UPDATE` event с `FUNDING_FEE` reason — аналог Bybit `execType=Funding`
-- [ ] Reconnect/heartbeat логика (аналог bybit_ws.py)
+- [x] WS endpoints: public `wss://fstream.binance.com/stream`, private `wss://fstream.binance.com/ws/<listenKey>`
+- [x] Auth: REST `POST /fapi/v1/listenKey`, keep-alive PUT каждые 30 мин
+- [x] Public: `@markPrice@1s` -> PRICE_TICK + FUNDING_RATE events
+- [x] Private: `ACCOUNT_UPDATE.FUNDING_FEE` -> транслируется в `execType=Funding` (executor не нужно менять)
+- [x] Reconnect/heartbeat, 16 тестов
 
 **Шаг 2 — Daemon refactor** (`src/engine/daemon.py`):
-- [ ] Параметр `exchange` в конструкторе (default: bybit)
-- [ ] WebSocket factory: `exchange -> BybitWebSocket | BinanceWebSocket`
-- [ ] CCXT client: `ccxt.bybit()` -> `ccxt.<exchange>()`
-- [ ] Env vars: `BINANCE_API_KEY`, `BINANCE_API_SECRET` (уже в config.py)
+- [x] `--exchange binance` / `ENGINE_EXCHANGE=binance` env var
+- [x] `_create_ws()` / `_create_ccxt()` factory functions
+- [x] API keys: `{EXCHANGE}_API_KEY` env vars
+- [x] Legacy compat: `bybit_api_key` still works, 15 тестов
 
 **Шаг 3 — Strategy parametrize** (`src/strategies/funding_capture.py`):
-- [ ] REST scanner: убрать hardcoded `ccxt.bybit()`, использовать exchange из daemon
-- [ ] Symbol format: Binance CCXT = `BTC/USDT:USDT` (совпадает с Bybit — проверить)
-- [ ] `fetch_tickers` params: убрать `{"category": "linear"}` (Bybit-specific)
-- [ ] Funding interval awareness: Binance может иметь другие интервалы
+- [x] REST scanner: dynamic `getattr(ccxt, exchange_id)` вместо hardcoded bybit
+- [x] Binance: `fetch_funding_rates()` (funding не в tickers), 9 тестов
+- [x] `category=linear` только для Bybit
+- [x] Symbol format `BTC/USDT:USDT` совпадает на обеих биржах
 
-**Шаг 4 — Executor** (`src/execution/executor.py`):
-- [ ] Funding credited event: Binance `ACCOUNT_UPDATE.FUNDING_FEE` вместо `execType=Funding`
-- [ ] Order response parsing: Binance `executedQty`/`avgPrice` вместо `average`
+**Шаг 4 — Executor**: не нужен — BinanceWebSocket транслирует events в Bybit-совместимый формат.
 
 **Шаг 5 — Deploy**:
-- [ ] Второй docker-compose service `engine-binance` с `EXCHANGE=binance`
-- [ ] Отдельный Redis namespace чтобы не конфликтовать
+- [ ] Второй docker-compose service `engine-binance` с `ENGINE_EXCHANGE=binance`
+- [ ] `.env`: добавить `BINANCE_API_KEY`, `BINANCE_API_SECRET`
+- [ ] **Blocked: ждём Binance аккаунт + API key**
 
 **После Binance:**
 - [ ] **Depth filter при scale** — `effective/depth5 <= N` как hard filter (на $25 не работает, при $1k критичен)

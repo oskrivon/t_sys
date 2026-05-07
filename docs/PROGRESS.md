@@ -2,6 +2,26 @@
 
 ## Лог
 
+### 2026-05-07 — Binance integration (code ready), dynamic notional, error analysis
+
+**Binance integration — код готов (шаги 1-4 из 5):**
+- `BinanceWebSocket` — public @markPrice + private ACCOUNT_UPDATE.FUNDING_FEE, listen key auth (16 тестов)
+- Daemon — `--exchange binance`, WS/ccxt factory, legacy compat (15 тестов)
+- Strategy scanner — dynamic exchange, Binance `fetch_funding_rates()` (9 тестов)
+- Executor — не нужно менять, BinanceWS транслирует в Bybit-совместимый формат
+- **Blocked:** ждём Binance аккаунт + API key для deploy (шаг 5)
+
+**Dynamic notional sizing:**
+- `target_notional: 0` = engine запрашивает баланс при каждом precompute
+- notional = free_balance * 0.9, cap $500, fallback $25 при ошибке API
+- При текущих $27: автоматически торгует на ~$24 (13 тестов)
+
+**Исправлены завышенные проекции в документации:**
+- $817/мес и +192% annual → помечены как "без slippage, нереалистично"
+- Реальность: ~$5/мес Bybit, ~$16/мес Binance при $25 notional
+- Max leverage 10x (наблюдённый move 5.96% за hold, ликвидация 20x при 5%)
+- Ошибка прогноза 163x: slippage не моделировался + линейный scaling + cherry-picked day
+
 ### 2026-05-07 — Funding Capture: full reanalysis (76 trades), spread filter, Binance depth
 
 **Reanalysis на полных данных (76 trades с book data, не 29 как считали):**
