@@ -426,7 +426,13 @@ class FundingCaptureStrategy(Strategy):
                     notional_target = 25.0  # fallback
 
             # Compute qty from last_price
-            market = exchange.market(opp.symbol_ccxt)
+            try:
+                market = exchange.market(opp.symbol_ccxt)
+            except Exception:
+                logger.warning("funding_symbol_not_found",
+                               symbol=opp.symbol_raw,
+                               ccxt_sym=opp.symbol_ccxt)
+                return None
             min_qty = float(market.get("limits", {}).get("amount", {}).get("min", 1))
             qty_step = float(market.get("precision", {}).get("amount", min_qty))
 
