@@ -57,7 +57,12 @@ def _build_tickers(pairs: dict[str, dict]) -> dict:
 @pytest.fixture
 def strategy(funding_config, event_bus):
     """FundingCaptureStrategy with default test config."""
-    return FundingCaptureStrategy(funding_config, event_bus)
+    strat = FundingCaptureStrategy(funding_config, event_bus)
+    # Set exchange_ref so _do_scan knows which exchange to use
+    mock_exchange = MagicMock()
+    mock_exchange.id = "bybit"
+    strat._exchange_ref = mock_exchange
+    return strat
 
 
 @pytest.fixture

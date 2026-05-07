@@ -106,10 +106,31 @@ class FundingCaptureStrategy(Strategy):
         """Fetch all tickers, find high-funding pairs, update WS subs."""
         try:
             import ccxt.async_support as ccxt
-            # Use a separate lightweight client for scanning
-            scanner = ccxt.bybit({"enableRateLimit": True})
+            # Use a separate lightweight client for scanning (same exchange as engine)
+            exchange_id = getattr(self._exchange_ref, "id", "bybit") if self._exchange_ref else "bybit"
+            scanner_cls = getattr(ccxt, exchange_id)
+            scanner = scanner_cls({"enableRateLimit": True})
             try:
-                tickers = await scanner.fetch_tickers(params={"category": "linear"})
+                # Fetch tickers for volume filter
+                params = {"category": "linear"} if exchange_id == "bybit" else {}
+                tickers = await scanner.fetch_tickers(params=params)
+
+                # Fetch funding rates — Bybit embeds in tickers, Binance needs separate call
+                funding_map: dict[str, tuple[float, int]] = {}  # sym -> (rate, next_funding_ms)
+                if exchange_id == "bybit":
+                    for sym, t in tickers.items():
+                        fr = t.get("info", {}).get("fundingRate")
+                        if fr:
+                            nft = int(t.get("info", {}).get("nextFundingTime", 0) or 0)
+                            funding_map[sym] = (float(fr), nft)
+                else:
+                    # Binance/others: use fetch_funding_rates()
+                    rates = await scanner.fetch_funding_rates()
+                    for sym, r in rates.items():
+                        fr = r.get("fundingRate")
+                        if fr is not None:
+                            nft = int(r.get("fundingTimestamp") or r.get("info", {}).get("nextFundingTime", 0) or 0)
+                            funding_map[sym] = (float(fr), nft)
             finally:
                 await scanner.close()
 
@@ -119,20 +140,21 @@ class FundingCaptureStrategy(Strategy):
             for sym, t in tickers.items():
                 if "/USDT:USDT" not in sym:
                     continue
-                fr = t.get("info", {}).get("fundingRate")
-                if not fr:
+                if sym not in funding_map:
+                    continue
+                fr_val, nft = funding_map[sym]
+                if fr_val == 0:
                     continue
                 vol_24h = float(t.get("quoteVolume") or 0)
                 if vol_24h < self._min_volume_24h:
                     continue
-                rate = abs(float(fr))
-                nft = int(t.get("info", {}).get("nextFundingTime", 0) or 0)
+                rate = abs(fr_val)
                 if rate >= self._scan_threshold_rate:
                     raw = sym.replace("/", "").replace(":USDT", "")
                     hot_symbols.add(raw)
                     scan_results.append({
                         "symbol": raw,
-                        "rate": float(fr),
+                        "rate": fr_val,
                         "rate_bps": rate * 10_000,
                         "volume_24h": vol_24h,
                         "next_funding_ms": nft,
