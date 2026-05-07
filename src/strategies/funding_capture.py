@@ -57,6 +57,7 @@ class FundingCaptureStrategy(Strategy):
         self._min_volume_24h: float = config.params.get("min_volume_24h", 5_000_000)
         self._target_notional: float = config.params.get("target_notional", 25.0)
         self._min_book_depth_mult: float = config.params.get("min_book_depth_mult", 2.0)
+        self._max_spread_bps: float = config.params.get("max_spread_bps", 5.0)
         # Dynamic watchlist: starts with always-monitor, expanded by REST scan
         self._monitored: set[str] = set(ALWAYS_MONITOR)
         self._ws_ref = None  # set by daemon after WS connect
@@ -321,6 +322,16 @@ class FundingCaptureStrategy(Strategy):
                 }
             except Exception:
                 logger.warning("funding_book_snapshot_failed", symbol=opp.symbol_raw)
+
+        # Spread filter: reject wide-spread books (OOS-validated on 76 trades)
+        spread = book_snapshot.get("spread_bps", 0)
+        if spread >= self._max_spread_bps:
+            logger.info("funding_spread_rejected",
+                        symbol=opp.symbol_raw,
+                        spread_bps=spread,
+                        max_spread_bps=self._max_spread_bps)
+            self._scheduled.pop(opp.symbol_raw, None)
+            return
 
         signal = TradeSignal(
             strategy_id=self.config.strategy_id,

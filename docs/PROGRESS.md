@@ -2,6 +2,54 @@
 
 ## Лог
 
+### 2026-05-07 — Funding Capture: full reanalysis (76 trades), spread filter, Binance depth
+
+**Reanalysis на полных данных (76 trades с book data, не 29 как считали):**
+- `trades_log_server.json` содержит 201 записей, 153 с book_t2s (ранее анализировали только 50 из CSV)
+- 76 paired open-close trades с book snapshots (Apr 24 — May 5)
+
+**Spread filter — OOS-валидирован:**
+- Хронологический split 50/50 (38+38 trades)
+- `spread < 5 bps`: TRAIN avg=+$0.040, WR=54% | TEST avg=+$0.035, WR=70% — **YES**
+- `spread < 3 bps`: TRAIN avg=+$0.047 | TEST avg=+$0.078 — **YES** (но N=13 на TEST)
+- `spread >= 7 bps` и выше: не проходит OOS (avg < 0 на TEST)
+- Внедрён `max_spread_bps: 5.0` в engine — reject при spread >= 5 bps
+
+**Depth filter — не работает при $25, критичен при scale:**
+- При $25 (eff $250): median ratio = 0.32x от L5 depth → книга не фактор
+- При $1k (eff $10k): 95% trades превышают L5 depth, median ratio 12.9x
+- Вывод: depth filter бессмысленно валидировать на $25, нужен при scale
+
+**Binance vs Bybit depth comparison (51 общая монета, live orderbook):**
+- Binance глубже: median 2.8x (L5), 3.3x (L20); max до 107x (APE, KNC, SENT)
+- При $1k notional: Bybit fit_L5=8%, Binance fit_L5=29%, **Binance fit_L20=78%**
+- При $5k: Binance fit_L20=31% — потолок ~15 монет
+- Spreads: примерно равны (median ~3 bps обе биржи)
+- Fees: Binance 8 bps RT vs Bybit 11 bps RT — экономия $3/trade при $1k
+
+**Bybit-only монеты** (5 штук: AIOZ, BOBA, GIGA, GODS, TSTBSC) — ультра-тонкие L5 $43-$367, только для $25 notional.
+
+### 2026-05-06 — Инфраструктура: watchdog kill-loop, CI deploy fix, /status heartbeat
+
+**Engine рестартился каждые 5 минут:**
+- Причина: `watchdog_engine.sh` (cron `*/5 * * * *`) проверял `/tmp/engine_heartbeat` на хосте, но engine пишет его внутри контейнера → файла нет → `pkill -9`
+- Фикс: удалён watchdog из crontab, убиты ghost-процессы на хосте
+- Docker `restart: unless-stopped` достаточен для recovery
+
+**CI/CD не деплоил telegram-bot и paper-trading:**
+- `src/api/telegram/` и `src/paper_trading/` отсутствовали в change detection
+- `src/core/` ребилдил только engine, хотя это shared-код
+- Фикс: `src/core/` → ребилд всех; добавлены telegram-bot и paper-trading как отдельные deploy targets
+
+**Paper-trading падал при старте:**
+- `ImportError: cannot import name 'format_stats'` — ссылка на удалённую функцию
+- Фикс: убран лишний импорт из `service.py`
+
+**Новый /status с Redis heartbeat:**
+- Каждый сервис пишет `heartbeat:<name>` в Redis (TTL 90s, интервал 30s)
+- `/status` в TG-боте показывает: [OK]/[SLOW]/[DOWN] для всех 6 сервисов + engine details + paper stats
+- Не требует Docker socket внутри контейнера
+
 ### 2026-05-05 — Screener fixes + Volume Ranking paper + Daily Digest
 
 **Screener breakout persistence fix:**
