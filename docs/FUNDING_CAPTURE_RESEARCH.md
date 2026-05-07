@@ -134,12 +134,23 @@ Exact data: 6 trades, 20:00 UTC settlement, rates 10-26bps.
 
 Per settlement: **+$9.08**, monthly (x3/day): **~$817**
 
+> **UPDATE 2026-05-07:** Эти цифры — теоретический максимум на 6 trades одного settlement БЕЗ slippage.
+> Live данные (76 trades, Apr 22 — May 5) показали: slippage съедает ~90% funding дохода.
+> Реальный PnL при $25 notional / Bybit: **~+$5/мес** (не $817).
+> При $1k notional на Bybit: убыточно (95% trades превышают L5 depth).
+> Путь к масштабированию: Binance (книги 3-100x глубже, fees 8 vs 11 bps).
+> Подробнее: `docs/PROGRESS.md` запись 2026-05-07.
+
 ### С максимальным плечом (12-25x по монете)
 
 | Capital | Per settlement | Monthly | w/ referral -30% fee |
 |---------|---------------|---------|---------------------|
 | $1k | +$19 | $1,711 | $2,317 |
 | $10k | +$190 | $17,108 | $23,172 |
+
+> **UPDATE 2026-05-07:** Цифры выше НЕ учитывают slippage и нереалистичны.
+> Макс. безопасное плечо: **10x** (max наблюдённый move за hold = 5.96%, ликвидация 20x при 5%).
+> Макс. notional на Bybit: **$25** ($50 уже убыточно из-за thin books).
 
 ### Breakeven
 
@@ -150,10 +161,11 @@ Fee roundtrip = 2 * 0.055% = 11bps. Trades с rate <11bps убыточны.
 
 | Leverage | Ликвидация при | Risk за 3 сек hold |
 |----------|----------------|-------------------|
-| 10x | ~10% move | negligible |
-| 20x | ~5% move | low |
-| 25x | ~4% move | low (flash crash risk) |
-| 100x (BTC) | ~1% move | medium |
+| 10x | ~10% move | SAFE (max observed 5.96%) |
+| 15x | ~6.7% move | RISKY (margin 0.7%) |
+| 20x | ~5% move | DANGER (max move > liq dist) |
+| 25x | ~4% move | DANGER |
+| 100x (BTC) | ~1% move | DANGER |
 
 ## Оптимальная конфигурация
 

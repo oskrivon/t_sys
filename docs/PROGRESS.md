@@ -542,8 +542,8 @@ All tested on 10 symbols, ~6 months, Bybit costs.
 **Funding Capture — первый полный автоматический цикл (20:00 UTC):**
 - 6 позиций: entry за 5 сек → funding credited через WS → exit за 0.3 сек
 - Hold time 2-3 секунды. 0 открытых позиций после. 0 ошибок.
-- При $1k/10x: +$9.08 per settlement, ~$817/мес
-- При $10k/max lev: +$190 per settlement, ~$17k/мес ($23k с referral)
+- При $1k/10x: +$9.08 per settlement, ~$817/мес **(теоретический max БЕЗ slippage — см. UPDATE 2026-05-07)**
+- При $10k/max lev: +$190 per settlement, ~$17k/мес **(нереалистично — slippage съедает ~90%)**
 - Breakeven: 11bps (7.7bps с referral)
 
 **Exploit Research — 6 направлений проверено:**
@@ -607,7 +607,7 @@ All tested on 10 symbols, ~6 months, Bybit costs.
 |---|---|---|---|
 | Miro + ML + Vision>=8 | +7.3% | WR 58%, PF 3.46 | Paper trading running |
 | Volume Ranking L/S | +14.2% | Sharpe 1.62 | Paper trading running |
-| Funding capture >10bps | +192% (tiny) | WR 56% | Waiting futures account |
+| Funding capture spread<5bps | ~$5-14/мес@$25 Bybit | WR 60-70% | Live, spread filter deployed |
 
 **Опровергнуто:** Big Move standalone, funding scalp (average), coin pre-selection,
 CV estimates (overfitted 4x), all simple TA strategies.

@@ -84,7 +84,7 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 | **Weekend Ensemble** | **VOTE(BABA+NQ+XLK)→BTC** | **64%** | **+18% (18 t/yr)** | **2.82** | **30%** |
 | Volume Ranking L/S | Volume momentum | — | +14% (Sharpe 1.6) | 1.6 | 30% |
 | Miro + ML + Vision>=8 | S/R levels + AI filter | 58% | +7.3% (6 t/mo) | — | 25% |
-| Funding capture >10bps | Structural exploit | 56% | +192% (tiny size) | — | 15% |
+| Funding capture >10bps, spread<5 | Structural exploit | 60-70% | ~+$5-14/мес@$25 (Bybit ceiling) | — | 15% |
 
 - [ ] Paper trading validation: 4 недели все 3 стратегии параллельно
 - [ ] Vision интеграция в live screener (score>=8 → trade, <5 → skip)
@@ -148,11 +148,41 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 - [ ] **Screener signal collection** — с новым threshold (0.15/0.20) и breakout fix ждём signals + paper trades через Redis. Первый 4h scan 2026-05-05 16:00 UTC.
 - [ ] **Volume Ranking paper data** — первый daily tick 2026-05-06 00:05 UTC. Через 30+ дней — анализ P&L.
 
-**Scale-up — путь к $1k notional:**
-- [ ] **Binance funding capture** — fees 8 bps RT vs 11 Bybit. Книги 2.8x глубже (median L5), до 107x на некоторых монетах. При $1k: Binance fit_L20=78% vs Bybit 8%. **Это главный блокер для scale.**
-- [ ] **Depth filter при scale** — на $25 не работает (ratio 0.3x), при $1k критичен. Внедрить после перехода на Binance: `effective/depth5 <= N` как hard filter.
-- [ ] **Weekend signal → live execution** — автоматическое открытие/закрытие BTC perp по сигналу вместо записи в DB.
-- [ ] **Referral Rebate** — создать субаккаунт через свой реферал = -30% к fees. Сделать при scale up.
+**Scale-up — путь к $1k notional (Binance интеграция):**
+
+Binance — главный блокер для scale. Fees 8 bps RT vs 11, книги 2.8x глубже (median), до 107x на отдельных монетах. При $1k: fit_L20=78% vs Bybit 8%.
+
+**Шаг 1 — BinanceWebSocket** (`src/core/websocket/binance_ws.py`):
+- [ ] WS endpoints: `wss://fstream.binance.com/ws/<listenKey>` (private), `wss://fstream.binance.com/stream` (public)
+- [ ] Auth: REST `POST /fapi/v1/listenKey` -> получить listenKey, keep-alive каждые 30 мин
+- [ ] Public topics: `<symbol>@markPrice` (содержит fundingRate, nextFundingTime)
+- [ ] Private topics: `ACCOUNT_UPDATE` event с `FUNDING_FEE` reason — аналог Bybit `execType=Funding`
+- [ ] Reconnect/heartbeat логика (аналог bybit_ws.py)
+
+**Шаг 2 — Daemon refactor** (`src/engine/daemon.py`):
+- [ ] Параметр `exchange` в конструкторе (default: bybit)
+- [ ] WebSocket factory: `exchange -> BybitWebSocket | BinanceWebSocket`
+- [ ] CCXT client: `ccxt.bybit()` -> `ccxt.<exchange>()`
+- [ ] Env vars: `BINANCE_API_KEY`, `BINANCE_API_SECRET` (уже в config.py)
+
+**Шаг 3 — Strategy parametrize** (`src/strategies/funding_capture.py`):
+- [ ] REST scanner: убрать hardcoded `ccxt.bybit()`, использовать exchange из daemon
+- [ ] Symbol format: Binance CCXT = `BTC/USDT:USDT` (совпадает с Bybit — проверить)
+- [ ] `fetch_tickers` params: убрать `{"category": "linear"}` (Bybit-specific)
+- [ ] Funding interval awareness: Binance может иметь другие интервалы
+
+**Шаг 4 — Executor** (`src/execution/executor.py`):
+- [ ] Funding credited event: Binance `ACCOUNT_UPDATE.FUNDING_FEE` вместо `execType=Funding`
+- [ ] Order response parsing: Binance `executedQty`/`avgPrice` вместо `average`
+
+**Шаг 5 — Deploy**:
+- [ ] Второй docker-compose service `engine-binance` с `EXCHANGE=binance`
+- [ ] Отдельный Redis namespace чтобы не конфликтовать
+
+**После Binance:**
+- [ ] **Depth filter при scale** — `effective/depth5 <= N` как hard filter (на $25 не работает, при $1k критичен)
+- [ ] **Weekend signal -> live execution** — авто open/close BTC perp
+- [ ] **Referral Rebate** — -30% к fees при scale up
 
 **Отклонённые идеи (2026-05-05):**
 - ~~Limit/maker exit~~ — fill rate 18%, экономия +1.4 bps/trade при adverse move -50 bps. Шум.
