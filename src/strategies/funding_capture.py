@@ -55,7 +55,9 @@ class FundingCaptureStrategy(Strategy):
         self._entry_secs_before: int = config.params.get("entry_seconds_before", 10)
         self._exit_secs_after: int = config.params.get("exit_seconds_after", 15)
         self._min_volume_24h: float = config.params.get("min_volume_24h", 5_000_000)
-        self._target_notional: float = config.params.get("target_notional", 25.0)
+        self._target_notional: float = config.params.get("target_notional", 0.0)  # 0 = use full balance
+        self._max_notional: float = config.params.get("max_notional", 500.0)  # safety cap
+        self._balance_fraction: float = config.params.get("balance_fraction", 0.9)  # use 90% of free balance
         self._min_book_depth_mult: float = config.params.get("min_book_depth_mult", 2.0)
         self._max_spread_bps: float = config.params.get("max_spread_bps", 5.0)
         # Dynamic watchlist: starts with always-monitor, expanded by REST scan
@@ -348,7 +350,7 @@ class FundingCaptureStrategy(Strategy):
                 "next_funding_time": opp.next_funding_time,
                 "leverage": self._leverage,
                 "exit_after_seconds": self._exit_secs_after,
-                "target_notional": self._target_notional,
+                "target_notional": pre.get("notional_target", self._target_notional),
                 "last_price": opp.last_price,
                 "_precomputed_qty": pre["qty"],
                 "_leverage_set": True,
@@ -383,13 +385,31 @@ class FundingCaptureStrategy(Strategy):
             except Exception:
                 pass  # "not modified" or already set
 
-            # Compute qty from last_price (no REST call needed)
+            # Determine notional: dynamic from balance or fixed
+            if self._target_notional > 0:
+                notional_target = self._target_notional
+            else:
+                # Fetch free balance and compute max notional
+                try:
+                    bal = await exchange.fetch_balance({"type": "swap"})
+                    free_usdt = float(bal.get("USDT", {}).get("free", 0) or 0)
+                    notional_target = free_usdt * self._balance_fraction
+                    notional_target = min(notional_target, self._max_notional)
+                    logger.info("funding_dynamic_notional",
+                                symbol=opp.symbol_raw,
+                                free_usdt=round(free_usdt, 2),
+                                notional=round(notional_target, 2))
+                except Exception:
+                    logger.warning("funding_balance_fetch_failed", symbol=opp.symbol_raw)
+                    notional_target = 25.0  # fallback
+
+            # Compute qty from last_price
             market = exchange.market(opp.symbol_ccxt)
             min_qty = float(market.get("limits", {}).get("amount", {}).get("min", 1))
             qty_step = float(market.get("precision", {}).get("amount", min_qty))
 
-            if self._target_notional > 0 and opp.last_price > 0:
-                raw_qty = self._target_notional / opp.last_price
+            if notional_target > 0 and opp.last_price > 0:
+                raw_qty = notional_target / opp.last_price
                 if qty_step > 0:
                     raw_qty = int(raw_qty / qty_step) * qty_step
                 qty = max(raw_qty, min_qty)
@@ -434,7 +454,7 @@ class FundingCaptureStrategy(Strategy):
                         qty=qty,
                         price=opp.last_price,
                         notional=round(notional, 2))
-            return {"qty": qty, "book_precompute": book_pre}
+            return {"qty": qty, "book_precompute": book_pre, "notional_target": notional_target}
 
         except Exception:
             logger.exception("funding_precompute_failed", symbol=opp.symbol_raw)

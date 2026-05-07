@@ -15,7 +15,10 @@ strategies:
       exit_seconds_after: 30      # timeout safety net; normally exits on execType=Funding WS event
       scan_interval_seconds: 300
       min_volume_24h: 5000000     # $5M — filter out illiquid shitcoins
-      target_notional: 25.0       # $25 per position
+      target_notional: 0           # 0 = dynamic from balance (balance * balance_fraction)
+      max_notional: 500.0         # safety cap
+      balance_fraction: 0.9       # use 90% of free USDT balance
+      max_spread_bps: 5.0         # reject spread >= 5 bps (OOS validated)
       min_book_depth_mult: 2.0    # skip if book level1 < 2x our notional
 
   miro_breakout:
