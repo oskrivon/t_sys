@@ -2,15 +2,16 @@
 """Trading engine daemon entry point.
 
 Usage:
-    python scripts/run_engine.py
-    python scripts/run_engine.py --dry-run  # log signals but don't trade
+    python scripts/run_engine.py                    # Bybit (default)
+    python scripts/run_engine.py --exchange binance  # Binance
+    python scripts/run_engine.py --dry-run           # log signals but don't trade
 
 Environment variables (.env):
+    ENGINE_EXCHANGE (default bybit)
     BYBIT_API_KEY, BYBIT_API_SECRET
+    BINANCE_API_KEY, BINANCE_API_SECRET
     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID  (optional)
     ENGINE_CAPITAL (default 50)
-    ENGINE_FUNDING_THRESHOLD_BPS (default 10)
-    ENGINE_FUNDING_LEVERAGE (default 10)
 """
 from __future__ import annotations
 
@@ -63,23 +64,28 @@ from src.engine.daemon import TradingEngine
 def main():
     parser = argparse.ArgumentParser(description="Trading Engine")
     parser.add_argument("--dry-run", action="store_true", help="Log only, no trades")
+    parser.add_argument("--exchange", type=str,
+                        default=os.getenv("ENGINE_EXCHANGE", "bybit"),
+                        choices=["bybit", "binance"],
+                        help="Exchange to trade on (default: bybit)")
     parser.add_argument("--capital", type=float,
                         default=float(os.getenv("ENGINE_CAPITAL", "50")))
-    parser.add_argument("--funding-threshold", type=float,
-                        default=float(os.getenv("ENGINE_FUNDING_THRESHOLD_BPS", "10")))
-    parser.add_argument("--funding-leverage", type=int,
-                        default=int(os.getenv("ENGINE_FUNDING_LEVERAGE", "10")))
     args = parser.parse_args()
 
-    api_key = os.getenv("BYBIT_API_KEY")
-    api_secret = os.getenv("BYBIT_API_SECRET")
+    exchange = args.exchange.lower()
+
+    # Resolve API keys: try exchange-specific first, then generic
+    key_prefix = exchange.upper()
+    api_key = os.getenv(f"{key_prefix}_API_KEY") or os.getenv("API_KEY")
+    api_secret = os.getenv(f"{key_prefix}_API_SECRET") or os.getenv("API_SECRET")
     if not api_key or not api_secret:
-        print("ERROR: BYBIT_API_KEY and BYBIT_API_SECRET must be set in .env")
+        print(f"ERROR: {key_prefix}_API_KEY and {key_prefix}_API_SECRET must be set in .env")
         sys.exit(1)
 
     engine = TradingEngine(
-        bybit_api_key=api_key,
-        bybit_api_secret=api_secret,
+        api_key=api_key,
+        api_secret=api_secret,
+        exchange=exchange,
         total_capital=args.capital,
         redis_url=os.getenv("REDIS_URL", ""),
         telegram_token=os.getenv("TELEGRAM_BOT_TOKEN"),

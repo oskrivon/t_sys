@@ -12,7 +12,7 @@ from typing import Optional
 import structlog
 import yaml
 
-from src.core.websocket.bybit_ws import BybitWebSocket
+from src.core.websocket.base import WebSocketFeed
 from src.engine.event_bus import EventBus, Event, EventType
 from src.engine.scheduler import StrategyScheduler
 from src.engine.state import StateManager
@@ -23,22 +23,53 @@ from src.strategies.funding_capture import FundingCaptureStrategy
 
 logger = structlog.get_logger()
 
+SUPPORTED_EXCHANGES = ("bybit", "binance")
+
+
+def _create_ws(exchange: str, event_bus: EventBus,
+               api_key: str, api_secret: str) -> WebSocketFeed:
+    """Factory: create exchange-specific WebSocket feed."""
+    if exchange == "binance":
+        from src.core.websocket.binance_ws import BinanceWebSocket
+        return BinanceWebSocket(event_bus, api_key, api_secret)
+    from src.core.websocket.bybit_ws import BybitWebSocket
+    return BybitWebSocket(event_bus, api_key, api_secret)
+
+
+def _create_ccxt(exchange: str, api_key: str, api_secret: str):
+    """Factory: create async ccxt client for the given exchange."""
+    import ccxt.async_support as ccxt
+    cls = getattr(ccxt, exchange)
+    return cls({
+        "apiKey": api_key,
+        "secret": api_secret,
+        "enableRateLimit": True,
+    })
+
 
 class TradingEngine:
     """Single-process trading daemon. Manages all components lifecycle."""
 
     def __init__(
         self,
-        bybit_api_key: str,
-        bybit_api_secret: str,
+        api_key: str,
+        api_secret: str,
+        exchange: str = "bybit",
         total_capital: float = 50.0,
         redis_url: str = "",
         telegram_token: Optional[str] = None,
         telegram_chat_id: Optional[str] = None,
         strategies_config: str = "config/strategies.yml",
+        # Legacy compat: accept bybit_api_key/bybit_api_secret as aliases
+        bybit_api_key: str = "",
+        bybit_api_secret: str = "",
     ) -> None:
-        self._api_key = bybit_api_key
-        self._api_secret = bybit_api_secret
+        self._api_key = api_key or bybit_api_key
+        self._api_secret = api_secret or bybit_api_secret
+        self._exchange_name = exchange.lower()
+        if self._exchange_name not in SUPPORTED_EXCHANGES:
+            raise ValueError(f"Unsupported exchange: {exchange}. "
+                             f"Supported: {SUPPORTED_EXCHANGES}")
         self._total_capital = total_capital
         self._redis_url = redis_url
         self._tg_token = telegram_token
@@ -47,7 +78,7 @@ class TradingEngine:
 
         # Components (initialized in start())
         self.event_bus = EventBus()
-        self.ws: Optional[BybitWebSocket] = None
+        self.ws: Optional[WebSocketFeed] = None
         self.exchange = None
         self.positions = PositionTracker()
         self.executor: Optional[ExecutionManager] = None
@@ -60,7 +91,8 @@ class TradingEngine:
         self._shutdown_event = asyncio.Event()
 
     async def start(self) -> None:
-        logger.info("engine_starting", capital=self._total_capital)
+        logger.info("engine_starting", exchange=self._exchange_name,
+                     capital=self._total_capital)
 
         # 1. State manager
         self.state = StateManager()
@@ -77,17 +109,14 @@ class TradingEngine:
             from src.api.telegram.bot import TelegramNotifier
             self.notifier = TelegramNotifier(self._tg_token, self._tg_chat_id)
 
-        await self._notify("Engine starting...")
+        await self._notify(f"Engine starting ({self._exchange_name})...")
 
         # 4. Exchange (CCXT async)
-        import ccxt.async_support as ccxt
-        self.exchange = ccxt.bybit({
-            "apiKey": self._api_key,
-            "secret": self._api_secret,
-            "enableRateLimit": True,
-        })
+        self.exchange = _create_ccxt(self._exchange_name,
+                                     self._api_key, self._api_secret)
         await self.exchange.load_markets()
-        logger.info("exchange_connected", markets=len(self.exchange.markets))
+        logger.info("exchange_connected", exchange=self._exchange_name,
+                     markets=len(self.exchange.markets))
 
         # 5. Sync positions
         raw_positions = await self.exchange.fetch_positions()
@@ -114,11 +143,8 @@ class TradingEngine:
         await self._register_strategies()
 
         # 8. WebSocket
-        self.ws = BybitWebSocket(
-            event_bus=self.event_bus,
-            api_key=self._api_key,
-            api_secret=self._api_secret,
-        )
+        self.ws = _create_ws(self._exchange_name, self.event_bus,
+                             self._api_key, self._api_secret)
         await self.ws.connect()
 
         all_symbols = self._collect_symbols()
@@ -332,7 +358,7 @@ class TradingEngine:
         from src.core.exchange.ccxt_adapter import CCXTAdapter
         from src.core.models import Exchange
         adapter = CCXTAdapter.__new__(CCXTAdapter)
-        adapter.exchange = Exchange.BYBIT
+        adapter.exchange = Exchange(self._exchange_name)
         adapter._client = self.exchange
         return adapter
 
