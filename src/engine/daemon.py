@@ -266,7 +266,7 @@ class TradingEngine:
     def _create_strategy(self, sid: str, config: StrategyConfig) -> Optional[Strategy]:
         """Factory: create strategy instance by ID."""
         if sid == "funding_capture":
-            return FundingCaptureStrategy(config, self.event_bus)
+            return FundingCaptureStrategy(config, self.event_bus, state=self.state)
         if sid == "volume_ranking":
             from src.strategies.volume_ranking import VolumeRankingStrategy
             return VolumeRankingStrategy(config)

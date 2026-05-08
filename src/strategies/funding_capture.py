@@ -43,9 +43,10 @@ class FundingOpportunity:
 
 
 class FundingCaptureStrategy(Strategy):
-    def __init__(self, config: StrategyConfig, event_bus: EventBus) -> None:
+    def __init__(self, config: StrategyConfig, event_bus: EventBus, state=None) -> None:
         super().__init__(config)
         self._event_bus = event_bus
+        self._state = state  # StateManager — for logging skips to trades_log
         self._threshold_bps: float = config.params.get("threshold_bps", 10.0)
         self._threshold_rate = self._threshold_bps / 10_000  # 10bps = 0.001
         self._scan_threshold_bps: float = config.params.get("scan_threshold_bps", 5.0)
@@ -76,6 +77,21 @@ class FundingCaptureStrategy(Strategy):
     def set_ws(self, ws) -> None:
         """Called by daemon after WS is connected."""
         self._ws_ref = ws
+
+    def _log_skip(self, symbol: str, reason: str, details: dict | None = None) -> None:
+        """Record skipped funding opportunity to trades_log for post-analysis."""
+        if not self._state:
+            return
+        meta = {"reason": reason}
+        if details:
+            meta.update(details)
+        self._state.log_trade(
+            symbol=symbol,
+            strategy_id=self.config.strategy_id,
+            side="",
+            action="skip",
+            metadata=meta,
+        )
 
     async def initialize(self, exchange) -> None:
         self._exchange_ref = exchange
@@ -302,6 +318,12 @@ class FundingCaptureStrategy(Strategy):
         current = self._opportunities.get(opp.symbol_raw)
         if not current or abs(current.funding_rate) < self._threshold_rate:
             logger.info("funding_entry_cancelled_rate_dropped", symbol=opp.symbol_raw)
+            current_bps = abs(current.funding_rate) * 10_000 if current else 0
+            self._log_skip(opp.symbol_ccxt, "rate_dropped", {
+                "funding_bps": round(current_bps, 1),
+                "threshold_bps": self._threshold_bps,
+                "stage": "pre_precompute",
+            })
             self._scheduled.pop(opp.symbol_raw, None)
             return
 
@@ -310,6 +332,7 @@ class FundingCaptureStrategy(Strategy):
         # Phase 2: pre-compute (BEFORE hot path) — leverage + qty
         pre = await self._precompute_entry(opp)
         if not pre:
+            # _precompute_entry logs specific reason internally
             self._scheduled.pop(opp.symbol_raw, None)
             return
 
@@ -324,6 +347,12 @@ class FundingCaptureStrategy(Strategy):
         current = self._opportunities.get(opp.symbol_raw)
         if not current or abs(current.funding_rate) < self._threshold_rate:
             logger.info("funding_entry_cancelled_rate_dropped_final", symbol=opp.symbol_raw)
+            current_bps = abs(current.funding_rate) * 10_000 if current else 0
+            self._log_skip(opp.symbol_ccxt, "rate_dropped", {
+                "funding_bps": round(current_bps, 1),
+                "threshold_bps": self._threshold_bps,
+                "stage": "final_t2s",
+            })
             self._scheduled.pop(opp.symbol_raw, None)
             return
         opp = current
@@ -354,6 +383,12 @@ class FundingCaptureStrategy(Strategy):
                         symbol=opp.symbol_raw,
                         spread_bps=spread,
                         max_spread_bps=self._max_spread_bps)
+            self._log_skip(opp.symbol_ccxt, "spread_too_wide", {
+                "funding_bps": round(abs(opp.funding_rate) * 10_000, 1),
+                "spread_bps": spread,
+                "max_spread_bps": self._max_spread_bps,
+                "book": book_snapshot,
+            })
             self._scheduled.pop(opp.symbol_raw, None)
             return
 
@@ -432,6 +467,9 @@ class FundingCaptureStrategy(Strategy):
                 logger.warning("funding_symbol_not_found",
                                symbol=opp.symbol_raw,
                                ccxt_sym=opp.symbol_ccxt)
+                self._log_skip(opp.symbol_ccxt, "symbol_not_found", {
+                    "funding_bps": round(abs(opp.funding_rate) * 10_000, 1),
+                })
                 return None
             min_qty = float(market.get("limits", {}).get("amount", {}).get("min", 1))
             qty_step = float(market.get("precision", {}).get("amount", min_qty))
@@ -474,6 +512,15 @@ class FundingCaptureStrategy(Strategy):
                                    ask1_usd=round(ask1_usd, 1),
                                    notional=round(notional, 2),
                                    required=round(required, 2))
+                    self._log_skip(opp.symbol_ccxt, "thin_book", {
+                        "funding_bps": round(abs(opp.funding_rate) * 10_000, 1),
+                        "bid1_usd": round(bid1_usd, 1),
+                        "ask1_usd": round(ask1_usd, 1),
+                        "notional": round(notional, 2),
+                        "required": round(required, 2),
+                        "min_book_depth_mult": self._min_book_depth_mult,
+                    })
+                    return None
             except Exception:
                 logger.warning("funding_book_check_failed", symbol=opp.symbol_raw)
 
@@ -486,6 +533,9 @@ class FundingCaptureStrategy(Strategy):
 
         except Exception:
             logger.exception("funding_precompute_failed", symbol=opp.symbol_raw)
+            self._log_skip(opp.symbol_ccxt, "precompute_failed", {
+                "funding_bps": round(abs(opp.funding_rate) * 10_000, 1),
+            })
             return None
 
     # ------------------------------------------------------------------
