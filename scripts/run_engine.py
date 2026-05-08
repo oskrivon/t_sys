@@ -36,8 +36,12 @@ import structlog
 
 log_dir = ROOT / "data" / "logs"
 log_dir.mkdir(parents=True, exist_ok=True)
+
+# Per-exchange log file: engine.log (bybit), engine_binance.log, etc.
+_exchange_suffix = os.getenv("ENGINE_EXCHANGE", "bybit")
+_log_name = "engine.log" if _exchange_suffix == "bybit" else f"engine_{_exchange_suffix}.log"
 file_handler = RotatingFileHandler(
-    log_dir / "engine.log", maxBytes=10_000_000, backupCount=5, encoding="utf-8",
+    log_dir / _log_name, maxBytes=10_000_000, backupCount=5, encoding="utf-8",
 )
 file_handler.setLevel(logging.INFO)
 console_handler = logging.StreamHandler()

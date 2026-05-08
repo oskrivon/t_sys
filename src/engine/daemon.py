@@ -94,8 +94,10 @@ class TradingEngine:
         logger.info("engine_starting", exchange=self._exchange_name,
                      capital=self._total_capital)
 
-        # 1. State manager
-        self.state = StateManager()
+        # 1. State manager (per-exchange DB to avoid collisions)
+        from pathlib import Path
+        db_name = f"engine_state_{self._exchange_name}.db" if self._exchange_name != "bybit" else "engine_state.db"
+        self.state = StateManager(Path("data") / db_name)
 
         # 2. Redis bus (optional but recommended)
         if self._redis_url:
