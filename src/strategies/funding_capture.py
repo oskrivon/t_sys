@@ -128,7 +128,10 @@ class FundingCaptureStrategy(Strategy):
             # Use a separate lightweight client for scanning (same exchange as engine)
             exchange_id = getattr(self._exchange_ref, "id", "bybit") if self._exchange_ref else "bybit"
             scanner_cls = getattr(ccxt, exchange_id)
-            scanner = scanner_cls({"enableRateLimit": True})
+            scanner_opts = {"enableRateLimit": True}
+            if exchange_id == "binance":
+                scanner_opts["options"] = {"defaultType": "swap"}
+            scanner = scanner_cls(scanner_opts)
             try:
                 # Fetch tickers for volume filter
                 params = {"category": "linear"} if exchange_id == "bybit" else {}
