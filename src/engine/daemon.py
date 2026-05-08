@@ -132,6 +132,7 @@ class TradingEngine:
             positions=self.positions,
             notifier=self.notifier,
             state=self.state,
+            exchange_name=self._exchange_name,
         )
         self.event_bus.subscribe(EventType.SIGNAL_GENERATED, self.executor._on_signal)
         self.event_bus.subscribe(EventType.ORDER_UPDATE, self.executor._on_order_update)

@@ -174,14 +174,19 @@ Binance — главный блокер для scale. Fees 8 bps RT vs 11, кн�
 **Шаг 4 — Executor**: не нужен — BinanceWebSocket транслирует events в Bybit-совместимый формат.
 
 **Шаг 5 — Deploy**:
-- [ ] Второй docker-compose service `engine-binance` с `ENGINE_EXCHANGE=binance`
-- [ ] `.env`: добавить `BINANCE_API_KEY`, `BINANCE_API_SECRET`
-- [ ] **Blocked: ждём Binance аккаунт + API key**
+- [x] Второй docker-compose service `engine-binance` с `ENGINE_EXCHANGE=binance`
+- [x] `.env`: добавить `BINANCE_API_KEY`, `BINANCE_API_SECRET`
+- [x] Отдельная DB `engine_state_binance.db` и лог `engine_binance.log`
+- [x] 4h funding interval normalization (436/602 Binance монет на 4h)
+- [x] `defaultType=swap` для scanner (иначе возвращает spot тикеры)
+- [x] WS private timeout fix (30min vs 3min)
+- [x] Telegram prefix `[binance]`/`[bybit]`
 
 **После Binance:**
 - [ ] **Depth filter при scale** — `effective/depth5 <= N` как hard filter (на $25 не работает, при $1k критичен)
 - [ ] **Weekend signal -> live execution** — авто open/close BTC perp
 - [ ] **Referral Rebate** — -30% к fees при scale up
+- [ ] **Threshold tuning** — tier 25-40 bps оптимален, tier 15-25 убыточен, tier 120+ ловушка
 
 **Отклонённые идеи (2026-05-05):**
 - ~~Limit/maker exit~~ — fill rate 18%, экономия +1.4 bps/trade при adverse move -50 bps. Шум.

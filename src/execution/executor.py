@@ -27,12 +27,14 @@ class ExecutionManager:
         positions: PositionTracker,
         notifier=None,
         state=None,
+        exchange_name: str = "bybit",
     ) -> None:
         self._exchange = exchange
         self._event_bus = event_bus
         self._positions = positions
         self._notifier = notifier
         self._state = state
+        self._tag = f"[{exchange_name}] "
         self._pending_exits: dict[str, asyncio.Task] = {}
         self._executing: set[str] = set()  # symbols currently being executed (lock)
         self._funding_events: dict[str, asyncio.Event] = {}  # raw_symbol -> event for funding credited
@@ -506,6 +508,6 @@ class ExecutionManager:
     async def _notify(self, text: str) -> None:
         if self._notifier:
             try:
-                await self._notifier.send_text(text)
+                await self._notifier.send_text(self._tag + text)
             except Exception:
                 logger.warning("notify_failed", text=text[:50])

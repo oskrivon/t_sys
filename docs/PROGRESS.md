@@ -2,6 +2,36 @@
 
 ## Лог
 
+### 2026-05-09 — Binance live, funding interval normalization, skip logging, thin_book hard reject
+
+**Binance engine задеплоен и работает:**
+- Субаккаунт создан, $35 USDT на futures balance
+- `engine-binance` docker service — отдельная DB (`engine_state_binance.db`) и лог (`engine_binance.log`)
+- Сканирует 606 USDⓈ-M futures пар (vs 658 на Bybit)
+- WS private reconnect-спам пофикшен (timeout 30min vs 3min)
+- Telegram уведомления с `[binance]`/`[bybit]` префиксом
+
+**4h funding interval normalization (Binance):**
+- 436 из 602 монет на Binance — 4h интервал (6 сеттлментов/день)
+- Rate нормализуется к 8h-эквиваленту: `rate * (8 / interval_h)`
+- 10 bps на 4h = 20 bps effective → проходит threshold 15 bps
+- `fundingInfo` endpoint загружается при каждом скане
+
+**Skip logging в trades_log:**
+- `action="skip"` с metadata: reason, funding_bps, book data, spread
+- Reasons: thin_book, spread_too_wide, rate_dropped, symbol_not_found, precompute_failed
+- `thin_book` стал **hard reject** (раньше warning-only)
+
+**Bybit P&L за 2026-05-08 (первый профитный день):**
+- 8 трейдов, WR 87%, NET +0.20 USDT
+- Avg slippage -3.1 bps (vs -46.6 bps исторически, улучшение 15x)
+- Funding +0.48, Price PnL -0.06, Fees -0.22
+
+**Общий P&L (123 трейда, 15 дней):**
+- Funding +14.51, Slippage -13.13, Fees -3.03 = NET -1.65 USDT
+- Breakeven analysis: tier 25-40 bps — единственный профитный (+$0.05)
+- Монеты с >120 bps funding = ловушка (slippage 200+ bps)
+
 ### 2026-05-07 — Binance integration (code ready), dynamic notional, error analysis
 
 **Binance integration — код готов (шаги 1-4 из 5):**
