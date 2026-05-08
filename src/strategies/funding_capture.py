@@ -40,6 +40,7 @@ class FundingOpportunity:
     next_funding_time: int  # ms timestamp
     direction: Side
     last_price: float
+    funding_interval_h: int = 8  # 4 or 8 — used to normalize rate for threshold comparison
 
 
 class FundingCaptureStrategy(Strategy):
@@ -73,6 +74,8 @@ class FundingCaptureStrategy(Strategy):
         self._last_scan_results: list[dict] = []
         # Pre-computed for fast entry: symbol -> {qty, ...}
         self._precomputed: dict[str, dict] = {}
+        # Funding interval per symbol: BTCUSDT -> 8, SIRENUSDT -> 4
+        self._funding_intervals: dict[str, int] = {}
 
     def set_ws(self, ws) -> None:
         """Called by daemon after WS is connected."""
@@ -147,6 +150,10 @@ class FundingCaptureStrategy(Strategy):
                         if fr is not None:
                             nft = int(r.get("fundingTimestamp") or r.get("info", {}).get("nextFundingTime", 0) or 0)
                             funding_map[sym] = (float(fr), nft)
+
+                # Fetch funding intervals (Binance: many coins are 4h, not 8h)
+                if exchange_id == "binance":
+                    await self._fetch_funding_intervals(scanner)
             finally:
                 await scanner.close()
 
@@ -164,19 +171,25 @@ class FundingCaptureStrategy(Strategy):
                 vol_24h = float(t.get("quoteVolume") or 0)
                 if vol_24h < self._min_volume_24h:
                     continue
+                raw = sym.replace("/", "").replace(":USDT", "")
+                interval_h = self._funding_intervals.get(raw, 8)
                 rate = abs(fr_val)
-                if rate >= self._scan_threshold_rate:
-                    raw = sym.replace("/", "").replace(":USDT", "")
+                # Normalize to 8h-equivalent for threshold comparison:
+                # a 10bps rate on 4h schedule = 20bps effective (2x settlements/day)
+                rate_8h_equiv = rate * (8 / interval_h)
+                if rate_8h_equiv >= self._scan_threshold_rate:
                     hot_symbols.add(raw)
                     scan_results.append({
                         "symbol": raw,
                         "rate": fr_val,
                         "rate_bps": rate * 10_000,
+                        "rate_8h_bps": rate_8h_equiv * 10_000,
                         "volume_24h": vol_24h,
                         "next_funding_ms": nft,
+                        "interval_h": interval_h,
                     })
 
-            scan_results.sort(key=lambda x: x["rate_bps"], reverse=True)
+            scan_results.sort(key=lambda x: x["rate_8h_bps"], reverse=True)
             self._last_scan_results = scan_results
 
             # Update monitored set
@@ -194,12 +207,15 @@ class FundingCaptureStrategy(Strategy):
                          total_pairs=len(tickers),
                          hot_pairs=len(hot_symbols),
                          above_trade_threshold=sum(1 for r in scan_results
-                                                    if r["rate_bps"] >= self._threshold_bps),
+                                                    if r["rate_8h_bps"] >= self._threshold_bps),
                          new_subs=len(new_symbols),
                          removed=len(removed))
 
             if scan_results[:3]:
-                top3 = ", ".join(f"{r['symbol']}={r['rate_bps']:.0f}bps" for r in scan_results[:3])
+                top3 = ", ".join(
+                    f"{r['symbol']}={r['rate_bps']:.0f}bps" + (f"/{r['interval_h']}h" if r['interval_h'] != 8 else "")
+                    for r in scan_results[:3]
+                )
                 logger.info("funding_scan_top", top=top3)
 
             # Log settlement schedule for coins above trade threshold
@@ -208,13 +224,31 @@ class FundingCaptureStrategy(Strategy):
         except Exception:
             logger.exception("funding_scan_error")
 
+    async def _fetch_funding_intervals(self, scanner) -> None:
+        """Fetch per-symbol funding interval from Binance's fundingInfo endpoint."""
+        try:
+            import aiohttp
+            url = "https://fapi.binance.com/fapi/v1/fundingInfo"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as resp:
+                    data = await resp.json()
+            for entry in data:
+                sym = entry.get("symbol", "")
+                interval = int(entry.get("fundingIntervalHours", 8))
+                self._funding_intervals[sym] = interval
+            n_4h = sum(1 for v in self._funding_intervals.values() if v == 4)
+            logger.info("funding_intervals_loaded",
+                        total=len(self._funding_intervals), interval_4h=n_4h)
+        except Exception:
+            logger.warning("funding_intervals_fetch_failed")
+
     def _log_settlement_schedule(self, scan_results: list[dict]) -> None:
         """Group tradeable coins by next settlement time for visibility."""
         now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
         # Group by settlement hour
         schedule: dict[str, list[str]] = {}
         for r in scan_results:
-            if r["rate_bps"] < self._threshold_bps:
+            if r["rate_8h_bps"] < self._threshold_bps:
                 continue
             nft = r.get("next_funding_ms", 0)
             if not nft:
@@ -264,6 +298,7 @@ class FundingCaptureStrategy(Strategy):
         ccxt_sym = f"{base}/USDT:USDT"
 
         direction = Side.LONG if funding_rate < 0 else Side.SHORT
+        interval_h = self._funding_intervals.get(symbol_raw, 8)
 
         opp = FundingOpportunity(
             symbol_raw=symbol_raw,
@@ -272,6 +307,7 @@ class FundingCaptureStrategy(Strategy):
             next_funding_time=next_funding_ms,
             direction=direction,
             last_price=last_price,
+            funding_interval_h=interval_h,
         )
         self._opportunities[symbol_raw] = opp
 
@@ -279,9 +315,13 @@ class FundingCaptureStrategy(Strategy):
         now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
         time_to_funding_s = (next_funding_ms - now_ms) / 1000
 
+        # Normalize rate to 8h-equivalent for threshold comparison:
+        # 4h coin at 10bps = 20bps effective (settles 6x/day vs 3x)
+        rate_8h_equiv = abs(funding_rate) * (8 / interval_h)
+
         # Only schedule if: rate above threshold, within 2min window,
         # not already scheduled AND not already traded this round
-        if (abs(funding_rate) >= self._threshold_rate
+        if (rate_8h_equiv >= self._threshold_rate
                 and 0 < time_to_funding_s < 120
                 and symbol_raw not in self._scheduled
                 and symbol_raw not in self._traded_this_round):
@@ -316,12 +356,17 @@ class FundingCaptureStrategy(Strategy):
 
         # Re-check: rate might have changed
         current = self._opportunities.get(opp.symbol_raw)
-        if not current or abs(current.funding_rate) < self._threshold_rate:
+        if current:
+            effective_rate = abs(current.funding_rate) * (8 / current.funding_interval_h)
+        else:
+            effective_rate = 0
+        if not current or effective_rate < self._threshold_rate:
             logger.info("funding_entry_cancelled_rate_dropped", symbol=opp.symbol_raw)
             current_bps = abs(current.funding_rate) * 10_000 if current else 0
             self._log_skip(opp.symbol_ccxt, "rate_dropped", {
                 "funding_bps": round(current_bps, 1),
                 "threshold_bps": self._threshold_bps,
+                "interval_h": current.funding_interval_h if current else 8,
                 "stage": "pre_precompute",
             })
             self._scheduled.pop(opp.symbol_raw, None)
@@ -345,12 +390,17 @@ class FundingCaptureStrategy(Strategy):
 
         # Final re-check
         current = self._opportunities.get(opp.symbol_raw)
-        if not current or abs(current.funding_rate) < self._threshold_rate:
+        if current:
+            effective_rate_final = abs(current.funding_rate) * (8 / current.funding_interval_h)
+        else:
+            effective_rate_final = 0
+        if not current or effective_rate_final < self._threshold_rate:
             logger.info("funding_entry_cancelled_rate_dropped_final", symbol=opp.symbol_raw)
             current_bps = abs(current.funding_rate) * 10_000 if current else 0
             self._log_skip(opp.symbol_ccxt, "rate_dropped", {
                 "funding_bps": round(current_bps, 1),
                 "threshold_bps": self._threshold_bps,
+                "interval_h": current.funding_interval_h if current else 8,
                 "stage": "final_t2s",
             })
             self._scheduled.pop(opp.symbol_raw, None)
@@ -413,6 +463,7 @@ class FundingCaptureStrategy(Strategy):
                 "_leverage_set": True,
                 "book_precompute": pre.get("book_precompute", {}),
                 "book_t2s": book_snapshot,
+                "funding_interval_h": opp.funding_interval_h,
             },
             timestamp=datetime.now(timezone.utc),
         )
