@@ -182,6 +182,9 @@ class BinanceWebSocket(WebSocketFeed):
 
     async def _recv_loop(self, ws: ClientConnection, label: str) -> None:
         consecutive_timeouts = 0
+        # Private WS is silent until account activity (trades, funding);
+        # public sends @markPrice every 1s so silence there is a real problem.
+        max_timeouts = 6 if label == "public" else 60
         while self._running:
             try:
                 raw = await asyncio.wait_for(ws.recv(), timeout=30)
@@ -191,7 +194,7 @@ class BinanceWebSocket(WebSocketFeed):
                 await self._handle_message(data, label)
             except asyncio.TimeoutError:
                 consecutive_timeouts += 1
-                if consecutive_timeouts >= 6:
+                if consecutive_timeouts >= max_timeouts:
                     logger.error("binance_ws_dead", label=label,
                                  timeouts=consecutive_timeouts)
                     await self._reconnect(label)
