@@ -1,7 +1,7 @@
 """Binance Futures WebSocket — public (markPrice) + private (userData).
 
-Public endpoint: wss://fstream.binance.com/stream
-Private endpoint: wss://fstream.binance.com/ws/<listenKey>
+Public endpoint: wss://fstream.binancefuture.com/stream
+Private endpoint: wss://fstream.binancefuture.com/ws/<listenKey>
 
 Mark price stream includes: fundingRate, nextFundingTime, markPrice.
 User data stream includes: ACCOUNT_UPDATE with FUNDING_FEE reason.
@@ -25,7 +25,7 @@ from src.engine.event_bus import EventBus, Event, EventType
 logger = structlog.get_logger()
 
 BINANCE_FAPI_REST = "https://fapi.binance.com"
-BINANCE_WS_PUBLIC = "wss://fstream.binance.com/stream"
+BINANCE_WS_PUBLIC = "wss://fstream.binancefuture.com/stream"
 
 
 class BinanceWebSocket(WebSocketFeed):
@@ -104,7 +104,7 @@ class BinanceWebSocket(WebSocketFeed):
 
     async def _connect_private(self) -> None:
         self._listen_key = await self._create_listen_key()
-        ws_url = f"wss://fstream.binance.com/ws/{self._listen_key}"
+        ws_url = f"wss://fstream.binancefuture.com/ws/{self._listen_key}"
         self._private_ws = await websockets.connect(
             ws_url,
             ping_interval=20,
