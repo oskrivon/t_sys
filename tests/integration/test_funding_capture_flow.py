@@ -244,8 +244,9 @@ class TestFundingUpdateHandler:
         )
         await strategy._on_funding_update(event)
 
-        # traded_this_round should be cleared
-        assert len(strategy._traded_this_round) == 0
+        # Only BTCUSDT should be discarded (per-symbol reset, not clear all)
+        assert "BTCUSDT" not in strategy._traded_this_round
+        assert "ETHUSDT" in strategy._traded_this_round
 
     async def test_opportunity_stored(self, strategy):
         event = _make_funding_event(
