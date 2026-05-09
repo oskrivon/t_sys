@@ -98,11 +98,6 @@ class FundingCaptureStrategy(Strategy):
 
     async def initialize(self, exchange) -> None:
         self._exchange_ref = exchange
-        # Binance: disable spread filter for initial live testing
-        exchange_id = getattr(exchange, "id", "")
-        if exchange_id == "binance":
-            self._max_spread_bps = 999.0
-            logger.info("funding_spread_filter_disabled", exchange=exchange_id)
         self._event_bus.subscribe(EventType.FUNDING_RATE, self._on_funding_update)
         # Start background REST scanner
         self._scan_task = asyncio.create_task(self._scan_loop())
@@ -346,9 +341,9 @@ class FundingCaptureStrategy(Strategy):
                          direction=direction.value,
                          secs_to_funding=int(time_to_funding_s))
 
-        # Reset traded set when we're far from next settlement (>10min)
+        # Reset traded set for THIS symbol when far from next settlement (>10min)
         if time_to_funding_s > 600:
-            self._traded_this_round.clear()
+            self._traded_this_round.discard(symbol_raw)
 
     async def _schedule_entry(self, opp: FundingOpportunity, secs_until: float) -> None:
         """Wait, pre-compute, then fire order at T-2s.

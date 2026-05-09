@@ -125,7 +125,11 @@ def compute_metrics(
     total_return = float((equity[-1] - initial_capital) / initial_capital)
     days = (trades_sorted[-1].exit_time - trades_sorted[0].entry_time).days
     if days > 0:
-        annual_return = (1 + total_return) ** (365 / days) - 1
+        base = 1 + total_return
+        if base > 0:
+            annual_return = base ** (365 / days) - 1
+        else:
+            annual_return = -1.0  # total wipeout
     else:
         annual_return = total_return
     annual_return = float(annual_return)
