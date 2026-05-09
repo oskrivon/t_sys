@@ -72,11 +72,22 @@ class ExecutionManager:
             logger.warning("circuit_breaker_open", symbol=signal.symbol)
             return
 
+        sig_type = signal.metadata.get("type", "")
+        is_reduce = signal.metadata.get("reduce_only", False)
+
+        # Pairs trade exit: close existing position
+        if sig_type == "pairs_trade" and is_reduce:
+            try:
+                await self._execute_pairs_exit(signal)
+                return
+            except Exception:
+                logger.exception("exec_pairs_exit_failed", symbol=signal.symbol)
+                return
+
         # Prevent duplicate execution: check both position and in-flight lock
         if self._positions.has_position(signal.symbol) or signal.symbol in self._executing:
             return
 
-        sig_type = signal.metadata.get("type", "")
         try:
             if sig_type == "funding_capture":
                 await self._execute_funding_capture(signal)
@@ -336,10 +347,83 @@ class ExecutionManager:
             source="executor",
         ))
 
+        pair = signal.metadata.get("pair", "")
+        if pair:
+            await self._notify(
+                f"PAIRS ENTRY: {signal.side.value.upper()} {signal.symbol}\n"
+                f"Pair: {pair}, Leg: {signal.metadata.get('leg', '?')}\n"
+                f"Z-score: {signal.metadata.get('z_score', '?')}, Entry: {entry_price}"
+            )
+        else:
+            await self._notify(
+                f"ENTRY: {signal.side.value.upper()} {signal.symbol}\n"
+                f"Entry: {entry_price}, TP: {signal.tp}, SL: {signal.sl}\n"
+                f"Confidence: {signal.confidence:.2f}, Latency: {latency_ms:.0f}ms"
+            )
+
+    async def _execute_pairs_exit(self, signal: TradeSignal) -> None:
+        """Close one leg of a pairs trade."""
+        pos = self._positions.get(signal.symbol)
+        if not pos:
+            logger.warning("pairs_exit_no_position", symbol=signal.symbol)
+            return
+
+        qty = pos.qty
+        close_side = "sell" if pos.side == "long" else "buy"
+
+        t0 = asyncio.get_event_loop().time()
+        raw = await self._exchange.client.create_order(
+            symbol=signal.symbol,
+            type="market",
+            side=close_side,
+            amount=float(qty),
+            params={"reduceOnly": True},
+        )
+        latency_ms = (asyncio.get_event_loop().time() - t0) * 1000
+
+        exit_price = raw.get("average") or raw.get("price") or 0
+        entry_price = float(pos.entry_price)
+        if entry_price > 0:
+            if pos.side == "long":
+                pnl_pct = (float(exit_price) - entry_price) / entry_price * 100
+            else:
+                pnl_pct = (entry_price - float(exit_price)) / entry_price * 100
+        else:
+            pnl_pct = 0
+
+        self._positions.close(signal.symbol)
+
+        pair = signal.metadata.get("pair", "")
+        reason = signal.metadata.get("exit_reason", "")
+        logger.info("pairs_exit_executed",
+                     symbol=signal.symbol, pair=pair,
+                     pnl_pct=round(pnl_pct, 3),
+                     reason=reason, latency_ms=round(latency_ms))
+
+        if self._state:
+            self._state.log_trade(
+                symbol=signal.symbol,
+                strategy_id=signal.strategy_id,
+                side=pos.side,
+                action="close",
+                price=str(exit_price),
+                qty=str(qty),
+                pnl=f"{pnl_pct:.4f}%",
+                metadata={
+                    "entry_price": str(entry_price),
+                    "pair": pair,
+                    "exit_reason": reason,
+                    "entry_z": signal.metadata.get("entry_z"),
+                    "exit_z": signal.metadata.get("exit_z"),
+                    "leg": signal.metadata.get("leg"),
+                    "latency_ms": round(latency_ms),
+                },
+            )
+
         await self._notify(
-            f"ENTRY: {signal.side.value.upper()} {signal.symbol}\n"
-            f"Entry: {entry_price}, TP: {signal.tp}, SL: {signal.sl}\n"
-            f"Confidence: {signal.confidence:.2f}, Latency: {latency_ms:.0f}ms"
+            f"PAIRS EXIT: {signal.symbol} ({pair})\n"
+            f"PnL: {pnl_pct:+.3f}%, Reason: {reason}\n"
+            f"Z: {signal.metadata.get('entry_z', '?')} -> {signal.metadata.get('exit_z', '?')}"
         )
 
     # ------------------------------------------------------------------

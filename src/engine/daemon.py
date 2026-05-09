@@ -273,6 +273,9 @@ class TradingEngine:
         if sid == "volume_ranking":
             from src.strategies.volume_ranking import VolumeRankingStrategy
             return VolumeRankingStrategy(config)
+        if sid == "pairs_trading":
+            from src.strategies.pairs_trading import PairsTradingStrategy
+            return PairsTradingStrategy(config, state=self.state)
         # Add more strategies here as they become ready:
         # if sid == "miro_breakout":
         #     return MiroStrategy(config)

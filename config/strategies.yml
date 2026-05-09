@@ -21,6 +21,20 @@ strategies:
       max_spread_bps: 5.0         # reject spread >= 5 bps (OOS validated)
       min_book_depth_mult: 2.0    # skip if book level1 < 2x our notional
 
+  pairs_trading:
+    enabled: true
+    type: event_driven
+    allocation_pct: 0.0            # paper only — no real capital
+    max_positions: 10              # 5 pairs × 2 legs
+    params:
+      schedule: "4h"
+      z_entry: 2.0                 # enter when |z| > 2
+      z_exit: 0.0                  # exit when z crosses 0
+      z_stop: 4.0                  # stop if z diverges to 4
+      lookback: 80                 # rolling window (80 × 4h = ~13 days)
+      max_hold_candles: 120        # ~20 days timeout
+      # pairs defined in code (OOS-validated top 5)
+
   miro_breakout:
     enabled: false
     type: event_driven
