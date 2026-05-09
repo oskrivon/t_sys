@@ -109,7 +109,7 @@ jobs:
             git pull origin master
             SERVICES=""
             if [ "${{ needs.changes.outputs.engine }}" = "true" ]; then
-              SERVICES="$SERVICES engine"
+              SERVICES="$SERVICES engine engine-binance"
             fi
             if [ "${{ needs.changes.outputs.screeners }}" = "true" ]; then
               SERVICES="$SERVICES screener-4h screener-1h"

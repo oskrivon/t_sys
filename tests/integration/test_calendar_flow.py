@@ -154,7 +154,14 @@ class TestRunExit:
     async def test_exit_after_hold(self, tmp_config):
         conn = init_db(tmp_config.db_path)
         record_signal(conn, "2026-05-06", "pre_fomc_long", "long", 8)
-        mark_entry(conn, "2026-05-06", "pre_fomc_long", 95000.0)
+        # Set entry_time explicitly (mark_entry uses datetime.now which breaks
+        # when the real date passes the test date)
+        conn.execute(
+            """UPDATE calendar_trades SET status='open', entry_price=95000.0,
+               entry_time='2026-05-06T10:00:00+00:00'
+               WHERE event_date='2026-05-06' AND event_type='pre_fomc_long'"""
+        )
+        conn.commit()
         conn.close()
 
         now = datetime(2026, 5, 6, 18, 5, tzinfo=timezone.utc)  # 8h+ after 10:00
