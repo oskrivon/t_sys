@@ -219,6 +219,10 @@ class BinanceWebSocket(WebSocketFeed):
         if "result" in data and "id" in data:
             return
 
+        # Combined stream format: {"stream": "...", "data": {"e": ...}}
+        if "stream" in data and "data" in data:
+            data = data["data"]
+
         event_type = data.get("e")
 
         # --- Public: markPriceUpdate ---
