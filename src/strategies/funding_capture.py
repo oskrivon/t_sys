@@ -98,6 +98,11 @@ class FundingCaptureStrategy(Strategy):
 
     async def initialize(self, exchange) -> None:
         self._exchange_ref = exchange
+        # Binance: disable spread filter for initial live testing
+        exchange_id = getattr(exchange, "id", "")
+        if exchange_id == "binance":
+            self._max_spread_bps = 999.0
+            logger.info("funding_spread_filter_disabled", exchange=exchange_id)
         self._event_bus.subscribe(EventType.FUNDING_RATE, self._on_funding_update)
         # Start background REST scanner
         self._scan_task = asyncio.create_task(self._scan_loop())
@@ -107,7 +112,8 @@ class FundingCaptureStrategy(Strategy):
                      leverage=self._leverage,
                      scan_interval=self._scan_interval,
                      min_volume_24h=self._min_volume_24h,
-                     target_notional=self._target_notional)
+                     target_notional=self._target_notional,
+                     max_spread_bps=self._max_spread_bps)
 
     # ------------------------------------------------------------------
     # REST scanner — discovers high-funding coins across ALL pairs
