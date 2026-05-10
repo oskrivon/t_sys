@@ -311,6 +311,15 @@ class FundingCaptureStrategy(Strategy):
         direction = Side.LONG if funding_rate < 0 else Side.SHORT
         interval_h = self._funding_intervals.get(symbol_raw, 8)
 
+        # Binance @markPrice WS always reports next 8h slot in T field,
+        # ignoring 4h/1h sub-intervals. For sub-8h coins, compute real
+        # next settlement: ceil(now) to next interval_h boundary.
+        if interval_h < 8:
+            now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+            interval_ms = interval_h * 3600 * 1000
+            # Next settlement = ceil(now / interval_ms) * interval_ms
+            next_funding_ms = ((now_ms // interval_ms) + 1) * interval_ms
+
         opp = FundingOpportunity(
             symbol_raw=symbol_raw,
             symbol_ccxt=ccxt_sym,
