@@ -20,6 +20,8 @@ strategies:
       balance_fraction: 0.9       # use 90% of free USDT balance
       max_spread_bps: 5.0         # reject spread >= 5 bps (OOS validated)
       min_book_depth_mult: 2.0    # skip if book level1 < 2x our notional
+      # Tokenized stock pairs — geo-restricted, fail at order execution
+      blacklist: ["NVDA", "AAPL", "GOOGL", "MSFT", "TSLA", "AMZN", "COIN", "MSTR"]
 
   pairs_trading:
     enabled: true

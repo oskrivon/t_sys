@@ -62,6 +62,7 @@ class FundingCaptureStrategy(Strategy):
         self._balance_fraction: float = config.params.get("balance_fraction", 0.9)  # use 90% of free balance
         self._min_book_depth_mult: float = config.params.get("min_book_depth_mult", 2.0)
         self._max_spread_bps: float = config.params.get("max_spread_bps", 5.0)
+        self._blacklist: set[str] = set(config.params.get("blacklist", []))
         # Dynamic watchlist: starts with always-monitor, expanded by REST scan
         self._monitored: set[str] = set(ALWAYS_MONITOR)
         self._ws_ref = None  # set by daemon after WS connect
@@ -176,6 +177,9 @@ class FundingCaptureStrategy(Strategy):
                 if vol_24h < self._min_volume_24h:
                     continue
                 raw = sym.replace("/", "").replace(":USDT", "")
+                base = raw.replace("USDT", "")
+                if base in self._blacklist:
+                    continue
                 interval_h = self._funding_intervals.get(raw, 8)
                 rate = abs(fr_val)
                 # Normalize to 8h-equivalent for threshold comparison:
@@ -287,6 +291,9 @@ class FundingCaptureStrategy(Strategy):
         data = event.data
         symbol_raw = data.get("_symbol_raw", "")
         if symbol_raw not in self._monitored:
+            return
+        base = symbol_raw[:-4] if symbol_raw.endswith("USDT") else symbol_raw
+        if base in self._blacklist:
             return
 
         funding_rate = float(data.get("fundingRate", 0) or 0)
