@@ -93,9 +93,9 @@ class PairsTradingStrategy(Strategy):
         """Check one pair for entry/exit signals."""
         pair_key = self._pair_key(sym_a, sym_b)
 
-        # Fetch 4h candles for both symbols
-        candles_a = await exchange.fetch_ohlcv(sym_a, "4h", limit=self._candle_limit)
-        candles_b = await exchange.fetch_ohlcv(sym_b, "4h", limit=self._candle_limit)
+        # Fetch 4h candles for both symbols (raw ccxt — returns [[ts,o,h,l,c,v]])
+        candles_a = await exchange.client.fetch_ohlcv(sym_a, "4h", limit=self._candle_limit)
+        candles_b = await exchange.client.fetch_ohlcv(sym_b, "4h", limit=self._candle_limit)
 
         if not candles_a or not candles_b:
             return None
