@@ -156,9 +156,11 @@ class FundingCaptureStrategy(Strategy):
                             nft = int(r.get("fundingTimestamp") or r.get("info", {}).get("nextFundingTime", 0) or 0)
                             funding_map[sym] = (float(fr), nft)
 
-                # Fetch funding intervals (Binance: many coins are 4h, not 8h)
+                # Fetch funding intervals (Binance: API endpoint; Bybit: from markets)
                 if exchange_id == "binance":
                     await self._fetch_funding_intervals(scanner)
+                elif exchange_id == "bybit":
+                    self._load_bybit_intervals(scanner)
             finally:
                 await scanner.close()
 
@@ -249,6 +251,24 @@ class FundingCaptureStrategy(Strategy):
                         total=len(self._funding_intervals), interval_4h=n_4h)
         except Exception:
             logger.warning("funding_intervals_fetch_failed")
+
+    def _load_bybit_intervals(self, scanner) -> None:
+        """Load funding intervals from Bybit markets (already loaded by ccxt)."""
+        try:
+            for sym, m in scanner.markets.items():
+                if "/USDT:USDT" not in sym:
+                    continue
+                fi_min = m.get("info", {}).get("fundingInterval")
+                if fi_min:
+                    raw = sym.replace("/", "").replace(":USDT", "")
+                    interval_h = int(fi_min) // 60
+                    if interval_h > 0:
+                        self._funding_intervals[raw] = interval_h
+            n_4h = sum(1 for v in self._funding_intervals.values() if v == 4)
+            logger.info("funding_intervals_loaded",
+                        total=len(self._funding_intervals), interval_4h=n_4h)
+        except Exception:
+            logger.warning("funding_intervals_load_failed_bybit")
 
     def _log_settlement_schedule(self, scan_results: list[dict]) -> None:
         """Group tradeable coins by next settlement time for visibility."""
