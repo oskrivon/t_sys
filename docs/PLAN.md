@@ -137,6 +137,39 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 
 ## TODO
 
+### Weekend Ensemble → Live (deadline: пятница 2026-05-15 21:00 UTC)
+
+**Контекст:** Paper собирает 1 трейд/неделю, 30 трейдов = 7 мес. OOS Sharpe 1.83, 2 paper trades (1W +1.63%, 1L TBD). Live на $50 даёт те же данные + реальный execution, макс loss при SL 2% = $3.
+
+**Текущая архитектура:** cron-скрипт `scripts/weekend_signal.py` → `src/weekend/runner.py` → paper DB (`data/paper_trades.db`). Нет реальных ордеров — только запись в SQLite + Telegram алерт.
+
+**План:**
+
+Шаг 1 — Execution layer в runner.py:
+- [ ] Добавить `live: bool` флаг в `WeekendConfig` (default false)
+- [ ] `run_friday_signal()`: после `mark_entry()` → `create_order(BTC/USDT:USDT, market, side, qty)`
+- [ ] `run_sunday_settlement()`: `create_order(reduceOnly=True)` → `mark_exit()` с реальной ценой
+- [ ] `run_sl_check()`: при SL hit → `create_order(reduceOnly=True)` вместо только записи
+- [ ] Leverage: 3x (conservative), notional из конфига (default $150 = $50 × 3x)
+- [ ] Exchange: Bybit (уже есть ключи на сервере, BTC/USDT:USDT самый ликвидный)
+
+Шаг 2 — Safety:
+- [ ] Qty computation: `notional / btc_price`, round к min_qty биржи
+- [ ] Retry logic: если ордер фейлит — 2 retry с 3s delay, потом Telegram alert "MANUAL INTERVENTION"
+- [ ] Position check перед entry: если уже есть позиция по BTC — skip
+- [ ] Position check перед exit: если позиции нет — skip (already closed)
+- [ ] Dry-run guard: `--live` CLI flag обязателен, без него paper-only
+
+Шаг 3 — Config & deploy:
+- [ ] `WeekendConfig`: `live`, `leverage`, `notional` поля
+- [ ] Обновить cron на сервере: `weekend_signal.py friday --live`
+- [ ] Тесты: mock exchange, проверка order flow (entry → SL check → exit)
+
+**Не делаем:**
+- НЕ интегрируем в engine/daemon — weekend это 1 трейд/неделю, cron идеально подходит
+- НЕ делаем WS мониторинг SL — 4h cron check достаточно (SL 2%, BTC не прыгнет 2% за 4h без новостей)
+- НЕ делаем отдельный субаккаунт — $50 на основном Bybit, positions_synced=0 всё равно
+
 ### Next steps (после сессии 2026-05-05)
 
 **Ближайшие (можно делать сейчас):**
@@ -304,6 +337,9 @@ Scale funding capture to multiple exchanges — different liquidity pools, no cr
 
 ## Backlog — Прочее
 
+- **Pairs Trading / Stat Arb** — 14 OOS survivors из 177 пар. Top: BTC/LTC (Sharpe 0.90, WR 68%), DOT/FIL (0.70, 60%), FIL/LTC (0.52, 58%). Portfolio 5 pairs: Sharpe ~1.80, +24.8% annual @5x. Market neutral. Next: cointegration test, paper trading, live engine. Script: `scripts/research/backtest_pairs_trading.py`
+- **Range Trading (corridor bounce)** — ML+Vision OOS validated: score>=6 = 200t, WR 38.5%, PF 1.29. LONG score 6-7 = 45.6% WR. Комплементарен к Miro (bounce vs breakout). Next: paper trading для gate, R:R/cost sensitivity analysis. Scripts: `scripts/research/backtest_range_trading.py`, `scripts/research/range_vision_score.py`
+- **TG signal channels (pump front-running)** — нужны каналы с императивными сигналами на Binance/Bybit (entry/TP/SL). Найденные каналы — BingX only или отчёты, не сигналы. Приоритет LOW — вернуться при наличии подходящих каналов и $1k+ капитала.
 - Funding passive yield — 3.5-5% APR на idle capital
 - ML модели для предсказания — после того как базовая стратегия работает
 - Sentiment analysis (новости, соцсети)

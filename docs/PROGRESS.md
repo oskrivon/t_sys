@@ -2,6 +2,87 @@
 
 ## Лог
 
+### 2026-05-10 — Pairs Trading / Stat Arb research: 14 OOS survivors
+
+**190 пар протестировано** (20 символов × C(20,2), 4h, 2 года, split 50/50).
+Z-score mean reversion: entry |z|>2, exit z=0, stop z=4, lookback=80 (13 дней).
+Fees: 4 ордера × 7bps = 28bps roundtrip.
+
+**14 из 177 пар прошли OOS** (train Sharpe>0.5, test Sharpe>0) — 8% survival rate.
+
+Top 5 OOS survivors:
+
+| Pair | Corr | Test N | Test WR | Test Sharpe | Test PF | Annual @$1k 5x |
+|---|---|---|---|---|---|---|
+| BTC/LTC | 0.64 | 38 | 68.4% | **0.90** | 1.43 | +31.4% |
+| DOT/FIL | 0.80 | 43 | 60.5% | **0.70** | 1.35 | +30.1% |
+| FIL/LTC | 0.71 | 31 | 58.1% | **0.52** | 1.32 | +38.5% |
+| AVAX/OP | 0.78 | 34 | 67.6% | **0.48** | 1.22 | +20.5% |
+| DOT/NEAR | 0.80 | 40 | 62.5% | **0.34** | 1.13 | +11.5% |
+
+**Portfolio (top 5 pairs):** ~10 trades/mo, WR 62.2%, **Sharpe ~1.80**, annual **+24.8%** @$1k 5x.
+
+**Ключевые наблюдения:**
+- LTC участвует в 3 из top 5 пар (BTC/LTC, FIL/LTC, OP/LTC) — "якорь" для mean reversion
+- Средняя корреляция OOS пар: 0.72 (не экстремальная)
+- APT/MATIC и FIL/MATIC — высокий Sharpe, но малый N (3-4 трейда) — ненадёжны
+- Market neutral: не зависит от направления рынка
+
+### 2026-05-09 — Binance WS fix, first Binance funding trades, Range Trading research
+
+**Binance WS починен (2 бага):**
+- `_handle_message` не распаковывал combined stream format `{"stream":...,"data":{...}}` — все markPrice молча дропались, `_on_funding_update` никогда не вызывался
+- `fstream.binance.com` гео-блокирован на сервере — коннект ОК, подписка ОК, данные не приходят. Переключили на `fstream.binancefuture.com` — работает
+- Public WS: 0 dead events после фикса (было 180/день)
+- Private WS: `exec_funding_exit_timeout` вместо WS `funding_credited` — safety net работает, но 30s лишнего exposure
+
+**CI починен:**
+- `test_exit_after_hold` ломался после 2026-05-06 — `mark_entry` использовал `datetime.now()`, тест ожидал фиксированную дату
+- `engine-binance` добавлен в CI deploy (раньше деплоился только `engine`)
+
+**Первые Binance funding trades (20:00 UTC):**
+- 4 трейда: MITOUSDT (49bps), RAVEUSDT (55bps), COLLECTUSDT, SPORTFUNUSDT
+- Полный цикл: entry → precompute → fill → exit (timeout 30s) → positions_synced count=0
+- Spread filter отключён для первого теста (temp)
+- PnL: в Telegram
+
+**Range Trading research — OOS на 10 символов, 2 года 4h:**
+
+Corridor-based: buy support → TP at resistance, sell resistance → TP at support.
+10 символов (BTC, ETH, SOL, BNB, XRP, DOGE, LINK, AVAX, ARB, SUI), split 50/50.
+
+Baseline (без фильтров): 1316 trades, WR 25.7%, PF 0.93 — убыточно.
+SHORT стабильно лучше LONG (28.6% vs 23.3% WR) на обеих половинах.
+
+ML filter (GradientBoosting, P>=0.4): 171t, WR 36.3%, PF 1.16.
+Top features: `rr` (R:R ratio), `price_change_7d`, `dist_to_sup_pct`.
+
+**ML + Vision (391 trades scored, $3.91 API cost):**
+
+| Score | Trades | WR | Avg PnL |
+|---|---|---|---|
+| 4-5 | 161 | 21.1% | -0.006% |
+| **6-7** | **195** | **39.0%** | **+0.003%** |
+| **Score>=6** | **200** | **38.5%, PF 1.29** | **+0.003%** |
+
+LONG score 6-7: **68t, WR 45.6%** — лучший сегмент.
+По символам (score>=6): BNB 50%, ETH 43.8%, LINK 42.9%, SOL 41.7%.
+
+**Итоговые метрики (ML + Vision>=6, TEST OOS):**
+- 200 trades, WR 38.5%, PF 1.29, **Sharpe 1.59**, annual +6.2%
+- LONG only: 68t, WR 45.6%, PF 1.66, **Sharpe 1.98** (лучший сегмент)
+- SHORT only: 132t, WR 34.8%, PF 1.10, Sharpe 0.43 (слабый)
+- 19 trades/month, avg hold 17h, avg R:R 2.5
+- Экономика @$500 10x: ~$2.6/мес, ~$31/год
+
+**Сравнение с другими стратегиями:**
+- Weekend effect: Sharpe 1.4, ~14% annual
+- Calendar events: Sharpe 1.06, ~14% annual
+- Miro + Vision: ~7% annual
+- **Range + Vision: Sharpe 1.59, ~6% annual** — zero overlap, portfolio diversifier
+
+**Вывод:** range trading без фильтров убыточен (как и Miro breakout). ML+Vision = Sharpe 1.59, edge реальный. Как standalone слабоват, как дополнение к портфелю — ОК (не коррелирует с другими стратегиями).
+
 ### 2026-05-09 — Binance live, funding interval normalization, skip logging, thin_book hard reject
 
 **Binance engine задеплоен и работает:**
