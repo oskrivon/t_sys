@@ -195,24 +195,38 @@ class ExecutionManager:
         raw_symbol = signal.symbol.replace("/", "").replace(":USDT", "")
         self._funding_events[raw_symbol] = funding_event
 
+        # Compute timeout relative to settlement time, not entry time.
+        # Entry is at T-5s, settlement at T-0. We want to exit at T+5s worst case.
+        next_funding_ms = signal.metadata.get("next_funding_time", 0)
+        if next_funding_ms:
+            now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+            secs_to_settlement = max((next_funding_ms - now_ms) / 1000, 0)
+            # Wait until settlement + 5s buffer for WS event
+            exit_timeout = secs_to_settlement + 5
+        else:
+            exit_timeout = exit_delay
+
         task = asyncio.create_task(
-            self._funding_exit(signal.symbol, raw_symbol, qty, side, funding_event, exit_delay)
+            self._funding_exit(symbol=signal.symbol, raw_symbol=raw_symbol,
+                               qty=qty, entry_side=side,
+                               funding_event=funding_event, timeout=exit_timeout)
         )
         self._pending_exits[signal.symbol] = task
 
     async def _funding_exit(
         self, symbol: str, raw_symbol: str, qty: Decimal,
-        entry_side: OrderSide, funding_event: asyncio.Event, timeout: int,
+        entry_side: OrderSide, funding_event: asyncio.Event, timeout: float,
     ) -> None:
         """Wait for funding credited event (or timeout), then close position."""
-        logger.info("exec_funding_exit_waiting", symbol=symbol, timeout_s=timeout)
+        logger.info("exec_funding_exit_waiting", symbol=symbol, timeout_s=round(timeout, 1))
 
         # Wait for execType=Funding WS event, with timeout as safety net
         try:
             await asyncio.wait_for(funding_event.wait(), timeout=timeout)
             logger.info("exec_funding_credited", symbol=symbol)
         except asyncio.TimeoutError:
-            logger.warning("exec_funding_exit_timeout", symbol=symbol)
+            logger.warning("exec_funding_exit_timeout", symbol=symbol,
+                           timeout_s=round(timeout, 1))
 
         logger.info("exec_funding_exit_executing", symbol=symbol)
         close_side = "sell" if entry_side == OrderSide.BUY else "buy"

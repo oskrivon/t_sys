@@ -140,6 +140,46 @@ class BinanceWebSocket(WebSocketFeed):
             return pub_ok and priv_ok
         return pub_ok
 
+    async def ensure_private_alive(self) -> None:
+        """Refresh listen key and reconnect private WS if dead.
+
+        Call before critical moments (e.g., funding settlement) to ensure
+        the private WS will deliver the FUNDING_FEE event.
+        """
+        if not self._api_key:
+            return
+
+        # Check if WS connection is still open
+        priv_ok = self._private_ws is not None and self._private_ws.state.name == "OPEN"
+        if priv_ok:
+            # Refresh listen key to extend its lifetime
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.put(
+                        f"{BINANCE_FAPI_REST}/fapi/v1/listenKey",
+                        headers={"X-MBX-APIKEY": self._api_key},
+                    ) as resp:
+                        if resp.status == 200:
+                            logger.info("binance_ws_private_keepalive_ok")
+                            return
+                        else:
+                            logger.warning("binance_ws_private_keepalive_bad",
+                                           status=resp.status)
+            except Exception:
+                logger.warning("binance_ws_private_keepalive_failed")
+
+        # WS dead or listen key stale — full reconnect
+        logger.warning("binance_ws_private_reconnecting_pre_settlement")
+        try:
+            if self._private_ws:
+                try:
+                    await self._private_ws.close()
+                except Exception:
+                    pass
+            await self._connect_private()
+        except Exception:
+            logger.exception("binance_ws_private_reconnect_failed")
+
     # ------------------------------------------------------------------
     # Subscriptions
     # ------------------------------------------------------------------

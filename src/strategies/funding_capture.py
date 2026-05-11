@@ -414,6 +414,13 @@ class FundingCaptureStrategy(Strategy):
 
         opp = current  # use latest data
 
+        # Phase 1.5: ensure private WS is alive for funding_credited event
+        if self._ws_ref and hasattr(self._ws_ref, "ensure_private_alive"):
+            try:
+                await self._ws_ref.ensure_private_alive()
+            except Exception:
+                logger.warning("funding_ws_health_check_failed", symbol=opp.symbol_raw)
+
         # Phase 2: pre-compute (BEFORE hot path) — leverage + qty
         pre = await self._precompute_entry(opp)
         if not pre:
