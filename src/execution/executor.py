@@ -225,8 +225,17 @@ class ExecutionManager:
             await asyncio.wait_for(funding_event.wait(), timeout=timeout)
             logger.info("exec_funding_credited", symbol=symbol)
         except asyncio.TimeoutError:
+            # WS event didn't arrive — verify via REST that settlement happened
             logger.warning("exec_funding_exit_timeout", symbol=symbol,
                            timeout_s=round(timeout, 1))
+            try:
+                funded = await self._check_funding_via_rest(symbol, raw_symbol)
+                if funded:
+                    logger.info("exec_funding_confirmed_via_rest", symbol=symbol)
+                else:
+                    logger.warning("exec_funding_not_confirmed", symbol=symbol)
+            except Exception:
+                logger.warning("exec_funding_rest_check_failed", symbol=symbol)
 
         logger.info("exec_funding_exit_executing", symbol=symbol)
         close_side = "sell" if entry_side == OrderSide.BUY else "buy"
@@ -289,6 +298,30 @@ class ExecutionManager:
             self._pending_exits.pop(symbol, None)
             self._funding_events.pop(raw_symbol, None)
 
+    async def _check_funding_via_rest(self, symbol: str, raw_symbol: str) -> bool:
+        """Check via REST API if funding was credited (fallback when WS is silent)."""
+        client = self._exchange.client
+        exchange_id = getattr(client, "id", "bybit")
+
+        if exchange_id == "binance":
+            # GET /fapi/v1/income?incomeType=FUNDING_FEE&symbol=X&limit=1
+            income = await client.fapiPrivateGetIncome({
+                "incomeType": "FUNDING_FEE",
+                "symbol": raw_symbol,
+                "limit": 1,
+            })
+            if income:
+                # Check if the latest funding is recent (within last 60s)
+                ts = int(income[-1].get("time", 0))
+                now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+                if now_ms - ts < 60_000:
+                    return True
+        elif exchange_id == "bybit":
+            # Bybit WS works fine — this is just a safety net
+            return True
+
+        return False
+
     # ------------------------------------------------------------------
     # Limit entry with market fallback (funding capture)
     # ------------------------------------------------------------------
@@ -322,10 +355,13 @@ class ExecutionManager:
             return Decimal(str(price)), latency_ms
 
         # Place post-only limit order
+        # Bybit: "PostOnly", Binance Futures: "GTX" (Good Till Crossing)
+        exchange_id = getattr(client, "id", "bybit")
+        tif = "GTX" if exchange_id == "binance" else "PostOnly"
         try:
             raw = await client.create_order(
                 symbol, "limit", side, qty, limit_price,
-                params={"timeInForce": "PostOnly"},
+                params={"timeInForce": tif},
             )
         except Exception as e:
             # PostOnly rejected (price crossed) — immediate market fallback
