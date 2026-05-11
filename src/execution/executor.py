@@ -291,7 +291,7 @@ class ExecutionManager:
 
         # Get current best price for limit
         try:
-            ob = await client.fetch_order_book(symbol, limit=1)
+            ob = await client.fetch_order_book(symbol, limit=5)
             bids = ob.get("bids", [])
             asks = ob.get("asks", [])
             if side == "buy" and bids:
@@ -300,8 +300,8 @@ class ExecutionManager:
                 limit_price = asks[0][0]  # best ask — we join the ask
             else:
                 raise ValueError("empty orderbook")
-        except Exception:
-            logger.warning("limit_entry_ob_failed_using_market", symbol=symbol)
+        except Exception as e:
+            logger.warning("limit_entry_ob_failed_using_market", symbol=symbol, error=str(e))
             raw = await client.create_order(symbol, "market", side, qty)
             latency_ms = (asyncio.get_event_loop().time() - t0) * 1000
             price = raw.get("average") or raw.get("price") or 0
