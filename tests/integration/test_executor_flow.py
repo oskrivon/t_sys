@@ -65,6 +65,18 @@ def mock_ccxt_client():
         "status": "closed",
         "side": "buy",
     }
+    client.fetch_order_book.return_value = {
+        "bids": [[50000.0, 1.0]],
+        "asks": [[50001.0, 1.0]],
+    }
+    client.fetch_order.return_value = {
+        "id": "order_123",
+        "status": "closed",
+        "average": 50000.0,
+        "price": 50000.0,
+        "filled": 0.001,
+    }
+    client.cancel_order = AsyncMock()
     return client
 
 
@@ -120,18 +132,21 @@ class TestFundingCaptureExecution:
         event = _make_signal(side=Side.LONG)
         await executor._on_signal(event)
 
-        mock_exchange.client.create_order.assert_called_once()
-        call_kwargs = mock_exchange.client.create_order.call_args
-        assert call_kwargs.kwargs["side"] == "buy"
-        assert call_kwargs.kwargs["type"] == "market"
-        assert call_kwargs.kwargs["symbol"] == "BTC/USDT:USDT"
+        # First call is limit entry (PostOnly), may also poll fetch_order
+        calls = mock_exchange.client.create_order.call_args_list
+        assert len(calls) >= 1
+        first_call = calls[0]
+        # Positional args: (symbol, type, side, qty, ...)
+        assert first_call[0][0] == "BTC/USDT:USDT"
+        assert first_call[0][1] == "limit"
+        assert first_call[0][2] == "buy"
 
     async def test_short_signal_places_sell_order(self, executor, mock_exchange):
         event = _make_signal(side=Side.SHORT)
         await executor._on_signal(event)
 
-        call_kwargs = mock_exchange.client.create_order.call_args
-        assert call_kwargs.kwargs["side"] == "sell"
+        first_call = mock_exchange.client.create_order.call_args_list[0]
+        assert first_call[0][2] == "sell"
 
     async def test_leverage_set_correctly(self, executor, mock_exchange):
         event = _make_signal(leverage=5)

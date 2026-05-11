@@ -421,10 +421,11 @@ class FundingCaptureStrategy(Strategy):
             self._scheduled.pop(opp.symbol_raw, None)
             return
 
-        # Phase 3: wait until 2s before settlement, then fire order
+        # Phase 3: wait until 5s before settlement, then fire order
+        # (limit order needs ~3s to fill, market fallback at T-2s)
         now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
         remaining_s = (opp.next_funding_time - now_ms) / 1000
-        fire_wait = remaining_s - 2.0
+        fire_wait = remaining_s - 5.0
         if fire_wait > 0:
             await asyncio.sleep(fire_wait)
 

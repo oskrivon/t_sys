@@ -149,25 +149,11 @@ class ExecutionManager:
                      leverage=leverage,
                      funding_bps=funding_bps)
 
-        # Market order entry — use raw ccxt to avoid _parse_order issues
-        t0 = asyncio.get_event_loop().time()
-        raw = await self._exchange.client.create_order(
-            symbol=signal.symbol,
-            type="market",
-            side=side.value,
-            amount=float(qty),
+        # Limit order entry with market fallback (save maker fee ~3bps)
+        entry_price, latency_ms = await self._funding_entry_limit(
+            signal.symbol, side.value, float(qty),
+            limit_wait_s=signal.metadata.get("limit_wait_seconds", 3.0),
         )
-        latency_ms = (asyncio.get_event_loop().time() - t0) * 1000
-
-        raw_price = raw.get("average") or raw.get("price")
-        if not raw_price:
-            # Bybit market orders don't return price immediately; fetch last price
-            try:
-                ticker = await self._exchange.client.fetch_ticker(signal.symbol)
-                raw_price = ticker.get("last", 0)
-            except Exception:
-                raw_price = 0
-        entry_price = Decimal(str(raw_price))
         pos = LivePosition(
             symbol=signal.symbol,
             side=signal.side.value,
@@ -288,6 +274,125 @@ class ExecutionManager:
         finally:
             self._pending_exits.pop(symbol, None)
             self._funding_events.pop(raw_symbol, None)
+
+    # ------------------------------------------------------------------
+    # Limit entry with market fallback (funding capture)
+    # ------------------------------------------------------------------
+
+    async def _funding_entry_limit(
+        self, symbol: str, side: str, qty: float, limit_wait_s: float = 3.0,
+    ) -> tuple[Decimal, float]:
+        """Try limit order at best bid/ask, fallback to market if not filled.
+
+        Returns (entry_price, latency_ms).
+        """
+        client = self._exchange.client
+        t0 = asyncio.get_event_loop().time()
+
+        # Get current best price for limit
+        try:
+            ob = await client.fetch_order_book(symbol, limit=1)
+            bids = ob.get("bids", [])
+            asks = ob.get("asks", [])
+            if side == "buy" and bids:
+                limit_price = bids[0][0]  # best bid — we join the bid
+            elif side == "sell" and asks:
+                limit_price = asks[0][0]  # best ask — we join the ask
+            else:
+                raise ValueError("empty orderbook")
+        except Exception:
+            logger.warning("limit_entry_ob_failed_using_market", symbol=symbol)
+            raw = await client.create_order(symbol, "market", side, qty)
+            latency_ms = (asyncio.get_event_loop().time() - t0) * 1000
+            price = raw.get("average") or raw.get("price") or 0
+            return Decimal(str(price)), latency_ms
+
+        # Place post-only limit order
+        try:
+            raw = await client.create_order(
+                symbol, "limit", side, qty, limit_price,
+                params={"timeInForce": "PostOnly"},
+            )
+        except Exception as e:
+            # PostOnly rejected (price crossed) — immediate market fallback
+            logger.warning("limit_entry_rejected_using_market", symbol=symbol, error=str(e))
+            raw = await client.create_order(symbol, "market", side, qty)
+            latency_ms = (asyncio.get_event_loop().time() - t0) * 1000
+            price = raw.get("average") or raw.get("price") or 0
+            return Decimal(str(price)), latency_ms
+
+        order_id = raw.get("id")
+        logger.info("limit_entry_placed", symbol=symbol, side=side,
+                     price=limit_price, order_id=order_id)
+
+        # Poll for fill
+        filled = False
+        poll_interval = 0.3
+        elapsed = 0.0
+        while elapsed < limit_wait_s:
+            await asyncio.sleep(poll_interval)
+            elapsed += poll_interval
+            try:
+                status = await client.fetch_order(order_id, symbol)
+                if status.get("status") == "closed":
+                    filled = True
+                    raw = status
+                    break
+            except Exception:
+                pass
+
+        latency_ms = (asyncio.get_event_loop().time() - t0) * 1000
+
+        if filled:
+            price = raw.get("average") or raw.get("price") or limit_price
+            logger.info("limit_entry_filled", symbol=symbol, price=price,
+                         latency_ms=round(latency_ms, 1))
+            return Decimal(str(price)), latency_ms
+
+        # Not filled — cancel and market fallback
+        try:
+            await client.cancel_order(order_id, symbol)
+        except Exception:
+            pass  # might be partially filled or already cancelled
+
+        # Check if partially filled
+        try:
+            status = await client.fetch_order(order_id, symbol)
+            filled_qty = float(status.get("filled", 0))
+        except Exception:
+            filled_qty = 0.0
+
+        remaining = qty - filled_qty
+
+        if remaining > 0:
+            try:
+                raw_market = await client.create_order(symbol, "market", side, remaining)
+                logger.info("limit_entry_fallback_market", symbol=symbol,
+                             filled_limit=filled_qty, remaining=remaining)
+            except Exception:
+                logger.exception("limit_entry_market_fallback_failed", symbol=symbol)
+                if filled_qty > 0:
+                    # Partial fill — use limit price as entry
+                    return Decimal(str(limit_price)), latency_ms
+                raise
+
+        latency_ms = (asyncio.get_event_loop().time() - t0) * 1000
+
+        # Compute blended entry price
+        if filled_qty > 0 and remaining > 0:
+            market_price = float(raw_market.get("average") or raw_market.get("price") or limit_price)
+            blended = (filled_qty * limit_price + remaining * market_price) / qty
+            logger.info("limit_entry_partial_blend", symbol=symbol,
+                         limit_qty=filled_qty, market_qty=remaining,
+                         limit_price=limit_price, market_price=market_price,
+                         blended=round(blended, 8))
+            return Decimal(str(round(blended, 8))), latency_ms
+        else:
+            # Fully market
+            price = raw_market.get("average") or raw_market.get("price") or 0
+            logger.info("limit_entry_full_market_fallback", symbol=symbol,
+                         price=price, latency_ms=round(latency_ms, 1))
+            return Decimal(str(price)), latency_ms
 
     # ------------------------------------------------------------------
     # Event-driven execution (Miro-type: entry + TP/SL)
