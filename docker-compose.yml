@@ -1,22 +1,8 @@
 version: '3.8'
 
 services:
-  timescaledb:
-    image: timescale/timescaledb:latest-pg15
-    container_name: trading-timescaledb
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_USER: trading
-      POSTGRES_PASSWORD: trading
-      POSTGRES_DB: trading
-    volumes:
-      - timescaledb_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U trading"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+  # TimescaleDB removed — was declared but never used by any code.
+  # All state is in SQLite + Redis. Re-add when needed for time-series analytics.
 
   redis:
     image: redis:7-alpine
@@ -42,5 +28,4 @@ services:
       - redis
 
 volumes:
-  timescaledb_data:
   redis_data:

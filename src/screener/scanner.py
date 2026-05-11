@@ -28,6 +28,7 @@ from .state import (
 )
 from .data_fetcher import fetch_all_candles
 from .coins_in_play import CoinsInPlayDetector
+from .signals_db import init_signals_db, record_signal as db_record_signal
 
 log = structlog.get_logger()
 
@@ -80,6 +81,11 @@ class MiroScreener:
         self.state = load_state(config.state_file)
         # Paper trader: only if Redis not available (local dev fallback)
         self.paper_trader = PaperTrader() if PaperTrader and not redis_bus else None
+
+        # Signals database — persistent record of all alerts
+        db_path = config.state_file.replace(".json", "_signals.db")
+        self._signals_db = init_signals_db(db_path)
+        log.info("signals_db_init", path=db_path)
 
     async def run_once(self) -> ScreenerResult:
         """Run a single scan across all coins."""
@@ -214,6 +220,29 @@ class MiroScreener:
                     log.error("paper_trade_record_error", symbol=signal.symbol, error=str(e))
 
             self.state.add_alert_key(signal.symbol, signal.signal_type.value, ts_key)
+
+            # Persist signal to SQLite for queryable history
+            try:
+                db_record_signal(
+                    self._signals_db,
+                    timestamp=ts_key,
+                    symbol=signal.symbol,
+                    signal_type=signal.signal_type.value,
+                    direction="long" if signal.is_long else "short",
+                    timeframe=self.config.timeframe,
+                    entry_price=signal.entry_price,
+                    sl=signal.sl,
+                    tp=signal.tp,
+                    rr_ratio=signal.rr_ratio,
+                    level_price=signal.level.price,
+                    level_touches=signal.level.touches,
+                    level_score=signal.level.score,
+                    ml_score=signal.ml_score,
+                    vision_score=signal.vision_score,
+                    volume_ratio=signal.volume_ratio,
+                )
+            except Exception as e:
+                log.error("signal_db_record_error", symbol=signal.symbol, error=str(e))
 
         # 6. Check open paper trades (only if using local paper trader)
         if self.paper_trader:
