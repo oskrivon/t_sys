@@ -2,6 +2,87 @@
 
 ## Лог
 
+### 2026-05-11 — Range Trading: trailing stop, RSI, adaptive trail, volume/BB filters
+
+**Базовая стратегия (4h, 10 символов, OOS TEST):**
+Corridor-based: buy support → TP resistance, sell resistance → TP support.
+Baseline: 1316t, WR 25.7%, PF 0.93, Sharpe -0.85, Ann -0.1%. Убыточна без фильтров.
+
+**Таймфреймы: 4h — оптимальный.**
+- 1h: PF 0.69, Sharpe -6.82 — слишком шумно, overfitting, fees больше % от хода
+- 4h: PF 0.93, Sharpe -0.85 — золотая середина
+- 1d: 39 трейдов — слишком мало для статистики
+
+**RSI как фильтр — асимметричный результат:**
+- LONG + RSI<30: WR 34.5% (29t) — работает, но мало трейдов
+- LONG + RSI 30-45: WR 18.6% — хуже baseline (трендовое падение, не капитуляция)
+- SHORT + RSI>55: 319t, WR 32.9%, PF 1.29, **Sharpe 1.51** — работает
+- SHORT + RSI>70: WR 16.0% — ловушка (пробой сопротивления в тренде)
+- Вывод: RSI лучше как фича для ML, не как hard filter. "Перепроданность" у поддержки = momentum down, не mean reversion (кроме extreme RSI<30).
+
+**Trailing stop — главное открытие:**
+
+| Config | N | WR | PF | Sharpe | Annual |
+|---|---|---|---|---|---|
+| Fixed SL/TP (baseline) | 1316 | 25.7% | 0.93 | -0.85 | -0.1% |
+| **Trail 0.5% immediate** | 1316 | **56.9%** | **4.11** | **13.15** | **+0.7%** |
+| Trail 1.0% immediate | 1316 | 37.9% | 1.09 | 1.12 | +0.0% |
+| Trail 1.5%+ | хуже baseline | | | | |
+
+Trail 0.5% трансформирует стратегию: цена часто идёт 30-70% пути до TP, разворачивается и бьёт SL. Trailing фиксирует эти partial moves. Avg win маленький (+0.005%), но losses ещё меньше.
+
+**Trailing + фильтры:**
+
+| Config | N | WR | PF | Sharpe | Exp/trade |
+|---|---|---|---|---|---|
+| Trail 0.5% (baseline) | 1316 | 56.9% | 4.11 | 13.15 | +0.005% |
+| Trail 0.5% + **Vol spike** | 524 | **64.7%** | **7.63** | 4.46 | **+0.008%** |
+| Trail 0.5% + BB + Vol | 230 | 63.5% | 7.18 | 6.61 | +0.007% |
+| Trail 0.5% + BB squeeze | 604 | 54.5% | 3.71 | 8.14 | +0.004% |
+
+Volume spike (vol > 1.5x MA) — лучший фильтр: WR 65%, PF 7.6, удваивает exp/trade.
+Adaptive trail (% от коридора) НЕ помогает — fixed 0.5% лучше всех адаптивных.
+
+**Trailing + ML + Vision:**
+ML и Vision не добавляют value поверх trailing — trailing уже делает все входы микро-профитными.
+Fixed SL/TP + ML + Vision>=6 по-прежнему лучший вариант для live (Sharpe 1.59, Ann +6.2%).
+
+**Вывод: trailing 0.5% красив на бумаге (Sharpe 13), но avg trade +0.005-0.008% не покрывает fees (~7-10 bps roundtrip). Для live не viable.** Range trading работает только через fixed SL/TP + ML+Vision фильтрацию, где avg win ~3% компенсирует fees при WR 38%.
+
+### 2026-05-11 — Funding Capture: limit entry, WS fixes, Binance P&L analysis
+
+**Limit order entry (PostOnly/GTX) с market fallback:**
+- Entry сдвинут с T-2s на T-5s, limit ордер 3s на fill, fallback market
+- Bybit: PostOnly, Binance: GTX (Good Till Crossing)
+- **Fill rate: 50%** (2/4 limit залились на Binance: GTC и SONIC)
+- Maker fee 2bps vs taker 5bps = экономия 3bps на каждом залитом
+
+**Binance Private WS не доставляет FUNDING_FEE events:**
+- Listen key OK, connection OK, но ACCOUNT_UPDATE с FUNDING_FEE не приходит
+- Добавлен REST fallback: `/fapi/v1/income` проверка после timeout
+- `ensure_private_alive()` в T-10s перед каждым settlement
+- Exit timeout пересчитан: settlement_time + 5s (было 30s от entry = 25s лишнего exposure)
+
+**Binance реальный P&L (20 closes, $35 deposit):**
+
+| Тип | $ |
+|---|---|
+| Funding earned | +$0.875 |
+| Price PnL | -$0.211 |
+| **Комиссии** | **-$0.611** |
+| **Баланс** | **$35.054 (+$0.054)** |
+
+Комиссии 70% от funding income. 5bps taker (VIP0) × 2 стороны = 10bps roundtrip.
+При $31 notional: $0.031/roundtrip. Limit entry экономит $0.009/trade (3bps).
+
+**Funding tier analysis (Bybit, 138 trades @ $25, проекция @ $1.5k):**
+- 15-25 bps: профитен при $25, убыточен при $1.5k (fees > funding)
+- **30-60 bps: единственный профитный tier при $1.5k** (+$3.82/17 дней)
+- 100+ bps: убыточен на любом масштабе (WR 47%, slippage-ловушка)
+- Cap 100bps сверху — однозначно нужен
+
+**Анализ Васиных +$60/полдня при $1.5k:** подтверждено — удачный день (19 апреля, аномально высокие rates). На 17 днях наших данных та же стратегия при $1.5k = -$167/мес из-за fees 10bps roundtrip.
+
 ### 2026-05-10 — Pairs Trading / Stat Arb research: 14 OOS survivors
 
 **190 пар протестировано** (20 символов × C(20,2), 4h, 2 года, split 50/50).
