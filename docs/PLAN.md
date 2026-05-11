@@ -137,6 +137,17 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 
 ## TODO
 
+### Funding Capture: анализ limit entry T-5s (risk review)
+
+**Контекст:** entry сдвинут с T-2s на T-5s для limit ордера (3s на fill + fallback market).
+Задеплоено 2026-05-11. Нужно проанализировать последствия:
+
+- [ ] Проверить: не увеличивается ли exposure time (3 лишних секунды в позиции до settlement)
+- [ ] Оценить risk: rate может упасть между T-5s и settlement (rate re-check в T-2s уже есть, но ордер уже в рынке)
+- [ ] Проверить fill rate лимиток по логам после 1-2 дней работы
+- [ ] Если limit fill rate <50% — вернуть T-2s и убрать limit entry
+- [ ] Сравнить avg slippage до и после (limit vs market baseline)
+
 ### Weekend Ensemble → Live (deadline: пятница 2026-05-15 21:00 UTC)
 
 **Контекст:** Paper собирает 1 трейд/неделю, 30 трейдов = 7 мес. OOS Sharpe 1.83, 2 paper trades (1W +1.63%, 1L TBD). Live на $50 даёт те же данные + реальный execution, макс loss при SL 2% = $3.
