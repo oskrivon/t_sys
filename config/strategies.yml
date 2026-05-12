@@ -8,8 +8,8 @@ strategies:
     allocation_pct: 10.0
     max_positions: 20
     params:
-      threshold_bps: 15.0         # optimal: 100% WR at 5.7 trades/day (backtest 81d)
-      scan_threshold_bps: 10.0    # pre-filter for WS watchlist
+      threshold_bps: 25.0         # raised from 15: fees+slippage=$0.09/trade, need >=25bps to profit on $35
+      scan_threshold_bps: 15.0    # pre-filter for WS watchlist (was 10)
       leverage: 10
       entry_seconds_before: 10    # precompute window (leverage+qty); order fires at T-2s
       exit_seconds_after: 30      # timeout safety net; normally exits on execType=Funding WS event
@@ -18,8 +18,8 @@ strategies:
       target_notional: 0           # 0 = dynamic from balance (balance * balance_fraction)
       max_notional: 500.0         # safety cap
       balance_fraction: 0.9       # use 90% of free USDT balance
-      max_spread_bps: 5.0         # reject spread >= 5 bps (OOS validated)
-      min_book_depth_mult: 2.0    # skip if book level1 < 2x our notional
+      max_spread_bps: 3.0         # tightened from 5: wide spread = slippage on exit (kills PnL)
+      min_book_depth_mult: 5.0    # raised from 2: thin books = slippage trap (SPORTFUN lost $0.27)
       # Tokenized stock pairs — geo-restricted, fail at order execution
       blacklist: ["NVDA", "AAPL", "GOOGL", "MSFT", "TSLA", "AMZN", "COIN", "MSTR"]
 

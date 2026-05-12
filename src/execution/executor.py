@@ -241,23 +241,10 @@ class ExecutionManager:
         close_side = "sell" if entry_side == OrderSide.BUY else "buy"
         try:
             t0 = asyncio.get_event_loop().time()
-            # Use raw ccxt client to avoid _parse_order Enum issues
-            raw = await self._exchange.client.create_order(
-                symbol=symbol,
-                type="market",
-                side=close_side,
-                amount=float(qty),
-                params={"reduceOnly": True},
+            # Try limit exit first (save ~3bps maker vs taker), fallback to market
+            exit_price, latency_ms = await self._funding_exit_limit(
+                symbol, close_side, float(qty), limit_wait_s=2.0,
             )
-            latency_ms = (asyncio.get_event_loop().time() - t0) * 1000
-
-            exit_price = raw.get("average") or raw.get("price")
-            if not exit_price:
-                try:
-                    ticker = await self._exchange.client.fetch_ticker(symbol)
-                    exit_price = ticker.get("last", "?")
-                except Exception:
-                    exit_price = "?"
             pos = self._positions.close(symbol)
 
             if self._state and pos:
@@ -443,6 +430,93 @@ class ExecutionManager:
             logger.info("limit_entry_full_market_fallback", symbol=symbol,
                          price=price, latency_ms=round(latency_ms, 1))
             return Decimal(str(price)), latency_ms
+
+    # ------------------------------------------------------------------
+    # Event-driven execution (Miro-type: entry + TP/SL)
+    # ------------------------------------------------------------------
+
+    async def _funding_exit_limit(
+        self, symbol: str, side: str, qty: float, limit_wait_s: float = 2.0,
+    ) -> tuple[Decimal, float]:
+        """Try limit exit at best bid/ask, fallback to market. Same logic as entry."""
+        client = self._exchange.client
+        t0 = asyncio.get_event_loop().time()
+
+        try:
+            ob = await client.fetch_order_book(symbol, limit=5)
+            bids = ob.get("bids", [])
+            asks = ob.get("asks", [])
+            if side == "sell" and bids:
+                limit_price = bids[0][0]
+            elif side == "buy" and asks:
+                limit_price = asks[0][0]
+            else:
+                raise ValueError("empty orderbook")
+        except Exception as e:
+            logger.warning("limit_exit_ob_failed_using_market", symbol=symbol, error=str(e))
+            raw = await client.create_order(symbol, "market", side, qty,
+                                            params={"reduceOnly": True})
+            latency_ms = (asyncio.get_event_loop().time() - t0) * 1000
+            price = raw.get("average") or raw.get("price") or 0
+            return Decimal(str(price)), latency_ms
+
+        exchange_id = getattr(client, "id", "bybit")
+        tif = "GTX" if exchange_id == "binance" else "PostOnly"
+        try:
+            raw = await client.create_order(
+                symbol, "limit", side, qty, limit_price,
+                params={"timeInForce": tif, "reduceOnly": True},
+            )
+        except Exception:
+            logger.warning("limit_exit_rejected_using_market", symbol=symbol)
+            raw = await client.create_order(symbol, "market", side, qty,
+                                            params={"reduceOnly": True})
+            latency_ms = (asyncio.get_event_loop().time() - t0) * 1000
+            price = raw.get("average") or raw.get("price") or 0
+            return Decimal(str(price)), latency_ms
+
+        order_id = raw.get("id")
+        logger.info("limit_exit_placed", symbol=symbol, side=side, price=limit_price)
+
+        filled = False
+        elapsed = 0.0
+        poll_interval = 0.3
+        while elapsed < limit_wait_s:
+            await asyncio.sleep(poll_interval)
+            elapsed += poll_interval
+            try:
+                status = await client.fetch_order(order_id, symbol)
+                if status.get("status") == "closed":
+                    filled = True
+                    raw = status
+                    break
+            except Exception:
+                pass
+
+        latency_ms = (asyncio.get_event_loop().time() - t0) * 1000
+
+        if filled:
+            price = raw.get("average") or raw.get("price") or limit_price
+            logger.info("limit_exit_filled", symbol=symbol, price=price)
+            return Decimal(str(price)), latency_ms
+
+        # Cancel and market fallback
+        try:
+            await client.cancel_order(order_id, symbol)
+        except Exception:
+            pass
+
+        try:
+            raw_market = await client.create_order(symbol, "market", side, qty,
+                                                   params={"reduceOnly": True})
+        except Exception:
+            logger.exception("limit_exit_market_fallback_failed", symbol=symbol)
+            return Decimal(str(limit_price)), latency_ms
+
+        latency_ms = (asyncio.get_event_loop().time() - t0) * 1000
+        price = raw_market.get("average") or raw_market.get("price") or limit_price
+        logger.info("limit_exit_market_fallback", symbol=symbol, price=price)
+        return Decimal(str(price)), latency_ms
 
     # ------------------------------------------------------------------
     # Event-driven execution (Miro-type: entry + TP/SL)
