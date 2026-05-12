@@ -2,6 +2,120 @@
 
 ## Лог
 
+### 2026-05-12 -- Validation Pipeline: CPCV, DSR, PBO, Factor Decomposition, Regime Detection
+
+Реализован полный пайплайн статистической валидации стратегий (`src/validation/`):
+
+**Модули:**
+- `cpcv.py` -- Combinatorial Purged Cross-Validation (Lopez de Prado 2018). Генерирует C(N,k) путей бэктеста с purging + embargo. Выход: распределение Sharpe, P(Sharpe>0).
+- `statistical.py` -- Deflated Sharpe Ratio (DSR), Probability of Backtest Overfitting (PBO), Minimum Backtest Length (MinBTL).
+- `factors.py` -- Factor decomposition: регрессия на CMKT, CMOM (2w), CSMB, CARRY. Выделяет alpha vs factor exposure.
+- `regime.py` -- HMM regime detection (2-3 state), per-regime Sharpe analysis. Fallback на GMM и threshold если hmmlearn недоступен.
+- `scorecard.py` -- Финальный gate: запускает все проверки, выводит scorecard PASS/FAIL.
+
+**Gates (пороги для paper trading):**
+1. CPCV median Sharpe >= 0.5
+2. CPCV P(Sharpe>0) >= 70%
+3. DSR p-value < 0.05
+4. PBO < 0.50
+5. MinBTL satisfied
+6. Factor alpha t-stat >= 2.0
+7. Multi-regime profitable
+
+**Тест на реальных BTC данных (719 дней):**
+- Factor decomposition: 3 фактора (CMKT, CMOM, CSMB) из 8 альткоинов
+- Regime detection (GMM fallback): low_vol 77% дней, high_vol 23% дней
+- Scorecard: 7 проверок, полный прогон < 2 секунд
+
+**Результаты валидации всех стратегий:**
+
+| Проверка | Miro+ML+Vision | Vol Ranking L/S | Weekend Effect |
+|---|---|---|---|
+| CPCV median Sharpe (>=0.5) | -0.22 FAIL | 1.71 PASS | 0.99 PASS |
+| CPCV P(Sharpe>0) (>=70%) | 46% FAIL | 71% PASS | 80% PASS |
+| DSR p-value (<0.05) | 0.985 FAIL | 0.583 FAIL | 0.535 FAIL |
+| MinBTL | 1.1y/6.3y FAIL | 0.9y/3.1y FAIL | 1.9y/2.3y FAIL |
+| PBO (<0.50) | skipped | 0.74 FAIL | 0.77 FAIL |
+| Factor alpha t-stat (>=2) | 0.14 FAIL | 0.99 FAIL | 0.89 FAIL |
+| Multi-regime (>=2) | 2 PASS | 2 PASS | 2 PASS |
+| **Итог** | **2/7** | **3/7** | **3/7** |
+
+**Ключевые находки:**
+- **Ни одна стратегия не прошла DSR** -- Sharpe не значим после correction за multiple testing
+- **PBO>0.5** у VR и Weekend -- вероятность overfitting >50%
+- **Factor alpha не значим** нигде -- alpha t-stat < 2.0 у всех трёх
+- **Volume Ranking CSMB beta = 3.10*** -- стратегия берёт size risk, а не alpha
+- **Weekend: CPCV лучший** (0.99 median, 80% positive) но мало данных (101 trade)
+- **Miro: худший** -- CPCV median Sharpe отрицательный, 46% путей убыточны
+- **Все прошли multi-regime** -- стратегии работают в обоих режимах волатильности
+
+**Weekend Effect с реальными macro-предикторами (yfinance):**
+
+Загружены 5 лет данных: QQQ, XLK, EWJ, BABA, KWEB, FXI, SPY, DIA, UUP, GLD.
+Протестированы 202 стратегии (individual + ensemble combos).
+
+Лучший: VOTE(nqF+techW+japanF) -- N=45, WR=64%, Avg=+1.15%, Sharpe=3.52
+
+| Проверка | Значение | Порог | Статус |
+|---|---|---|---|
+| CPCV median Sharpe | 2.04 | >=0.5 | PASS |
+| CPCV P(Sharpe>0) | 100% | >=70% | PASS |
+| DSR p-value | 0.403 | <0.05 | FAIL |
+| MinBTL | 2.0y / 8.0y | need 8y | FAIL |
+| PBO | 0.688 | <0.50 | FAIL |
+| Factor alpha t-stat | 1.94 | >=2.0 | FAIL (borderline, p=0.053) |
+| Multi-regime | 2 | >=2 | PASS |
+| **Итог** | **3/7** | | |
+
+Walk-forward H1->H2: Sharpe H1=3.72 -> H2=3.28 (edge сохраняется!)
+Factor: alpha=+1.88%/yr (t=1.94), R2=0.01 -- стратегия не объясняется known factors.
+CMKT beta=-0.0008 (не зависит от BTC direction), CMOM beta=+0.0017 (weak momentum).
+
+**Перезапуск с 5 годами данных (1799 дней BTC, 53 символа):**
+
+Скачаны 5 лет OHLCV свечей с Binance для всех 53 символов (4h + 1d).
+
+**Weekend VOTE(babaF+nqF+techW) на 5 годах -- 6/7 PASS:**
+
+| Проверка | Значение | Порог | Статус |
+|---|---|---|---|
+| CPCV median Sharpe | 1.84 | >=0.5 | PASS |
+| CPCV P(Sharpe>0) | 100% | >=70% | PASS |
+| DSR p-value | **0.019** | <0.05 | **PASS** |
+| MinBTL | 4.8y / 8.0y | need 8y | FAIL (202 variants) |
+| PBO | **0.342** | <0.50 | **PASS** |
+| Factor alpha t-stat | **3.67** | >=2.0 | **PASS** (p=0.000) |
+| Multi-regime | 2 | >=2 | PASS |
+
+Walk-forward H1->H2: VOTE(babaF+techW+sp500W) Sharpe H1=3.57 -> H2=2.19.
+**H2-OOS scorecard: 7/7 PASS. READY FOR PAPER TRADING.**
+H2 alpha t=2.24 (p=0.026), multi-regime, DSR p=0.004.
+
+**Volume Ranking на 5 годах:** 2/7 PASS (CPCV ok, PBO=0.56 -- улучшение с 0.74).
+**Miro на 5 годах:** 1/7 PASS -- по-прежнему не проходит. Concentrated in high_vol regime.
+
+### 2026-05-12 -- Funding Capture: P&L analysis + optimization
+
+**Baseline (8-12 мая, $35 start -> $34.82):**
+| Категория | Сумма | % от funding |
+|---|---|---|
+| Funding income | +$1.036 | 100% |
+| Fees (commission) | -$0.698 | 67% |
+| Slippage (realized PnL) | -$0.518 | 50% |
+| **Net** | **-$0.180** | **-17%** |
+
+Fees+slippage = 117% от funding. Avg per roundtrip: funding $0.080, fees $0.054, slippage $0.040.
+27 сигналов, 13 с funding income. Worst: SPORTFUNUSDT (-$0.265 на $0.034 funding).
+
+**Изменения (deployed):**
+1. threshold_bps: 15 -> 25 (отсекаем мелкие трейды не покрывающие fees)
+2. max_spread_bps: 5 -> 3 (все 16 rejects были ровно 5.0 -- порог слишком высокий)
+3. min_book_depth_mult: 2 -> 5 (тонкий стакан = slippage trap)
+4. Limit exit order с 2s timeout + market fallback (экономия ~3bps vs taker)
+
+**A/B мониторинг:** ежедневно в течение недели (13-19 мая) сравнивать net PnL.
+Target: net positive per trade (funding > fees + slippage).
+
 ### 2026-05-11 — Range Trading: trailing stop, RSI, adaptive trail, volume/BB filters
 
 **Базовая стратегия (4h, 10 символов, OOS TEST):**

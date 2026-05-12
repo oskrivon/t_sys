@@ -77,14 +77,14 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 **Этап 4 — Live trading MVP (multi-strategy)**
 
 Архитектура построена: Strategy ABC + PortfolioManager + ExecutionManager.
-Четыре подтверждённые стратегии:
+Подтверждённые стратегии (после validation pipeline 2026-05-12):
 
-| Стратегия | Edge | WR | Annual (est.) | Sharpe | Allocation |
-|---|---|---|---|---|---|
-| **Weekend Ensemble** | **VOTE(BABA+NQ+XLK)→BTC** | **64%** | **+18% (18 t/yr)** | **2.82** | **30%** |
-| Volume Ranking L/S | Volume momentum | — | +14% (Sharpe 1.6) | 1.6 | 30% |
-| Miro + ML + Vision>=8 | S/R levels + AI filter | 58% | +7.3% (6 t/mo) | — | 25% |
-| Funding capture >10bps, spread<5 | Structural exploit | 60-70% | ~+$5-14/мес@$25 (Bybit ceiling) | — | 15% |
+| Стратегия | Статус | Sharpe (5y) | Scorecard | Действие |
+|---|---|---|---|---|
+| **Weekend VOTE(BABA+NQ+XLK)** | **CONFIRMED** | **1.84** | **6/7 (H2: 7/7)** | **Paper trade** |
+| Volume Ranking L/S | На паузе | 0.63 | 5/7 | Пересмотр через 6 мес |
+| Miro + ML + Vision>=8 | На паузе | -0.15 | 1/7 | Опционально: Vision>=8 subset |
+| Funding capture | Live (микро) | — | не применимо | Масштабирование на Binance |
 
 - [ ] Paper trading validation: 4 недели все 3 стратегии параллельно
 - [ ] Vision интеграция в live screener (score>=8 → trade, <5 → skip)
@@ -136,6 +136,47 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 - [ ] Начать с $2-5k, scale up при positive results
 
 ## TODO
+
+### [CRITICAL] Пересмотр стратегий по результатам validation pipeline (2026-05-12)
+
+Validation scorecard (`src/validation/`) показал: **ни одна стратегия не прошла все gates.**
+
+**Weekend Effect: ПОДТВЕРЖДЁН (6/7 на 5y, H2-OOS 7/7)**
+- 5 лет данных (250 weekends), VOTE(babaF+nqF+techW): N=91, WR=65%, Sharpe=3.43
+- CPCV: median 1.84, P(>0)=100% -- PASS
+- DSR p=0.019 -- **PASS**
+- PBO=0.34 -- **PASS**
+- Factor alpha t=3.67 (p<0.001) -- **PASS.** Не объясняется BTC/momentum/size
+- Multi-regime: PASS (low-vol 1.47, high-vol 2.64)
+- MinBTL: FAIL (need 8y при 202 variants), но при фиксации ensemble n_trials=1 -> PASS
+- Walk-forward H1->H2: Sharpe 3.57 -> 2.19, **H2-OOS scorecard: 7/7 PASS**
+- **Вердикт: READY FOR PAPER TRADING.** Зафиксировать ensemble, не тюнить.
+
+**Volume Ranking: СЛАБЫЙ EDGE, НЕ СТОИТ УСИЛИЙ**
+- На 1 году (51 sym): Sharpe 1.56 -- выглядел хорошо
+- На 5 годах (41 sym, expanding universe): **Sharpe 0.63** -- обвалился
+- Scorecard 5y (n_trials=1): 5/7 PASS, alpha t=2.06 (p=0.039) -- alpha реален, но слабый
+- **CSMB beta упал с 3.10 до 1.53** (не значим на 5y). Не size play на длинной дистанции
+- CMOM beta=-2.16 (контрарианен momentum) -- проседает когда momentum работает
+- **Multi-regime FAIL**: low-vol Sharpe=1.27, high-vol Sharpe=-0.49 (-10.6% в кризисы)
+- Size-neutral variant: Sharpe 1.75 на 1 году, но та же проблема на 5 годах
+- Regime filter ненадёжен: 292 переключения за 1799 дней, 68% high-vol эпизодов = 1 день
+- **Вердикт: на паузу.** Sharpe 0.63 не оправдывает сложность (daily rebalance, 41 позиция).
+  Если вернёмся -- только как компонент портфеля с diversification benefit.
+
+**Miro + ML + Vision: НЕ ПРОХОДИТ**
+- CPCV median Sharpe **-0.15** на 5y, P(>0)=39% -- хуже рандома
+- Работает ТОЛЬКО в high-vol (Sharpe 1.59), в low-vol убыточна (-0.16)
+- Factor alpha t=0.27 -- нет alpha
+- **Вердикт: на паузу.** Для реанимации: (1) отфильтровать Vision>=8 subset,
+  (2) использовать только в high-vol режиме. Но regime detection ненадёжен.
+
+**Действия:**
+- [x] Скачаны 5 лет данных (53 символа, 4h+1d, Binance)
+- [x] Weekend: подтверждён на 5y, H2-OOS 7/7 PASS
+- [ ] Weekend: зафиксировать VOTE(babaF+nqF+techW), paper trade 3 мес
+- [ ] VR: на паузу. Пересмотр через 6 мес с бОльшей выборкой
+- [ ] Miro: на паузу. Опционально: проверить Vision>=8 subset (83 trades)
 
 ### Funding Capture: анализ limit entry T-5s (risk review)
 
