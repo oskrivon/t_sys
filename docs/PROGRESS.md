@@ -2,6 +2,94 @@
 
 ## Лог
 
+### 2026-05-13 -- Quant Audit: что было сломано и как починили (7 коммитов)
+
+**Зачем:** Проверили систему глазами кванта — "что бы сказал PhD при code review".
+Нашли 20+ проблем от critical до medium. Всё пофиксили за сессию.
+
+---
+
+#### Бэктест врал на 30-50%
+
+| Проблема | Как врал | Фикс |
+|----------|----------|------|
+| **Look-ahead в swing points** | Алгоритм смотрел на 5 свечей *вперёд*, чтобы найти вершину. В реалтайме будущего нет → бэктест находил уровни, которые в live не видны. | `causal=True`: окно только назад `[i-5, i]`. Старое поведение доступно через `causal=False` для офлайн-анализа. |
+| **Gap-through fills** | SL=95, свеча открылась на 92 → бэктест считал fill по 95 (на 3% лучше). | Fill по `min(SL, open)` — как на реальной бирже. |
+| **Entry по текущей свече** | Сигнал на закрытии свечи → вход по той же цене. Реально можно войти только на open *следующей*. | `entry_on_next_open=True` по умолчанию. |
+| **Entry gap-through** | Open следующей свечи уже ниже SL → бэктест входил и искал выход, вместо мгновенного стопа. | Проверка "open за SL?" → мгновенный SL на entry. |
+| **Нет комиссий в weekend бэктесте** | Validation script считал P&L без fees/slippage. 11 bps RT на Bybit = -11% от edge на каждой сделке. | Записано в PLAN: применить `bybit_futures()` cost preset. |
+
+**Результат:** честный бэктест показывает на 30-50% хуже, но это *правда*. Лучше узнать до деплоя.
+
+---
+
+#### Risk management не существовал
+
+| Проблема | Чем грозило | Фикс |
+|----------|-------------|------|
+| **Нет daily loss limit** | Конфиг `max_daily_loss=10%` нигде не проверялся. Система могла потерять 20% за день и продолжать торговать. | `DailyRiskTracker`: kill switch при -5% за день. Авто-сброс в UTC полночь. |
+| **Нет drawdown stop** | Никто не следил за общей просадкой. | `DrawdownTracker`: high-water mark, hard stop при -15% от пика. |
+| **Одинаковый размер BTC и PEPE** | PEPE волатильность 15x больше BTC → в 15 раз больше риска при том же размере. | `compute_volatility_adjusted_size()`: размер = risk_usd / ATR%. BTC получает 4.5x больше PEPE. |
+| **Exposure не уменьшался** | `current_exposure += size` при открытии, но при закрытии ничего. После 10 сделок risk check бесполезен. | `record_trade_close(size_usd=)` уменьшает exposure. |
+| **P&L дрейф (float)** | `total_pnl += 0.123%` — float-ошибки за 500 сделок: ±0.5% в equity. Drawdown trigger срабатывает неточно. | P&L в integer basis points (1 bps = 0.01%). Целые числа не дрейфуют. |
+
+---
+
+#### Execution мог потерять деньги молча
+
+| Проблема | Сценарий "3 ночи" | Фикс |
+|----------|-------------------|------|
+| **TP/SL без проверки** | Ставим стоп, биржа его отвергает → позиция без защиты, никто не знает. | Retry + проверка order ID + Telegram алерт. |
+| **Нет reconciliation** | WebSocket дропнул → TP сработал на бирже, но локально позиция "открыта". Навечно. | Каждые 60 сек: sync с биржей + проверка TP/SL ордеров + force-close stale (>48h). |
+| **Partial fill → double entry** | Лимитка частично заполнилась, `fetch_order` таймаут → код думает `filled=0` → шлёт полный маркет → 130% позиции. | 3 retry на fetch. При тотальном провале — считаем полный fill (безопаснее чем дублировать). |
+| **Нет heartbeat** | Screener зависает — система молча стоит часами. | Проверка каждые 5 мин, Telegram алерт при 30 мин тишины. |
+| **Нет сверки с биржей** | Локальный equity дрейфует от реального баланса. | Каждые 10 мин: fetch баланс биржи, логировать vs локальный. |
+
+---
+
+#### ML модель стагнировала
+
+| Проблема | Почему плохо | Фикс |
+|----------|-------------|------|
+| **Одна статичная модель** | Рынок меняется, модель обучена на 2024 → в 2026 предсказывает чушь. Нет способа откатить, сравнить версии. | `ModelRegistry`: версионные модели `miro_gb_v{N}.joblib` + JSON metadata. `load_latest()`, `load_version(n)`. |
+| **Нет drift detection** | Фичи сдвинулись от тренировочных → модель уверенно предсказывает мусор. | `DriftMonitor`: z-score фичей vs тренировочное распределение. Warning при drift > 2.5σ. |
+| **Нет feedback loop** | Модель дала prediction, сделка закрылась — никто не проверил правильность. | `PredictionTracker`: Brier score + rolling accuracy. Warning при плохой калибровке. |
+
+---
+
+#### Regime detection — новая подсистема
+
+**Зачем:** Breakout стратегия зарабатывает в тренде, теряет в боковике. Без фильтра ~30% сигналов — в боковике → убытки.
+
+**Как работает:**
+- **ADX > 25** = тренд (торгуем, только по направлению тренда)
+- **ADX < 20** = боковик (пропускаем все сигналы)
+- **vol_ratio > 2** = кризис/сквиз (пропускаем, слишком непредсказуемо)
+
+**Баг ADX:** Формула Wilder smoothing делила на period дважды → ADX показывал 2-5 вместо 25-80 → фильтр "trending > 25" никогда не срабатывал → 30% мусорных сигналов проходили. Пофикшено.
+
+**Vision scorer:** При падении API score=None → фильтр `if score is not None and score < min` пропускал сигнал. Ночью API упал → все сигналы прошли без Vision. Теперь: fail-closed (None = skip).
+
+---
+
+#### Файлы и где что
+
+| Компонент | Файл | Что там |
+|-----------|------|---------|
+| Swing points (causal) | `src/strategy/levels.py` | `find_swing_points(causal=True)` |
+| Backtest метрики | `src/backtest/metrics.py` | Sortino, Calmar, consecutive losses, universe_note |
+| Gap-through + entry_on_next_open | `src/backtest/runner.py` | `simulate_exit()`, `CandleStrategy.run()` |
+| Risk management | `src/portfolio/manager.py` | DailyRiskTracker, DrawdownTracker, bps P&L |
+| Vol-adjusted sizing | `src/execution/executor.py` | `compute_volatility_adjusted_size()` |
+| TP/SL verification + reconciliation | `src/execution/executor.py` | `_place_conditional_order()`, `_reconciliation_loop()` |
+| Heartbeat + equity check | `src/execution/executor.py` | `_heartbeat_loop()`, `_check_equity_match()` |
+| Regime detection | `src/strategy/regime.py` | `detect_regime()` → TRENDING/RANGING/VOLATILE |
+| ML registry + drift | `src/ai/ml_scorer.py` | `ModelRegistry`, `DriftMonitor`, `PredictionTracker` |
+| Regime features | `src/strategy/features.py` | `regime_adx`, `regime_efficiency`, `regime_vol_ratio` |
+| Regime filter в screener | `src/screener/scanner.py` | Фильтр перед ML scoring |
+
+---
+
 ### 2026-05-13 -- Quant Audit: Statistical Sins, Risk Management, Execution, ML Pipeline, Regime Detection
 
 Полный аудит системы "глазами кванта". 3 коммита, 6 подсистем затронуто.
