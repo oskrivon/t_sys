@@ -131,7 +131,57 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
         - [ ] Закрытие вс 23:00 UTC
       Фаза 2 (4-8 нед paper): live на $500-1k без плеча
       Фаза 3: scale + leverage 2-3x если live Sharpe >1.0
-- [ ] Risk manager: per-strategy allocation, conflict resolution, drawdown circuit breaker
+- [ ] Weekend Strategy: интеграция с новой инфраструктурой (quant audit 2026-05-13)
+
+      **Контекст:** Weekend strategy живёт в изоляции — собственный SQLite, ручной ccxt,
+      cron SL-check раз в 4 часа. После quant audit появились: regime detection, vol-adjusted
+      sizing, PortfolioManager с kill switch, backtest cost model. Ничего из этого не используется.
+
+      **Проблема 1: Нет regime detection при входе**
+      BTC может быть в VOLATILE режиме (crash/squeeze), а мы входим. SL 2% не спасёт
+      при gap-down 5%+ между SL-check'ами. `detect_regime()` уже готов.
+      - [ ] В `run_friday_signal()`: вызвать `detect_regime()` на BTC 4h данных
+      - [ ] Если VOLATILE (vol_ratio > 2.0) → skip trade + alert "skipped: volatile regime"
+      - [ ] Если TRENDING с ADX > 40 → проверить alignment: ensemble direction vs trend_direction
+            Counter-trend weekend trade в сильном тренде — опасен
+      - [ ] Записать regime в `predictor_details` JSON для post-hoc анализа
+
+      **Проблема 2: Фиксированный размер позиции**
+      Одинаковый notional в тихий weekend (BTC ATR 1%) и в volatile (ATR 5%).
+      `compute_volatility_adjusted_size()` готов в executor.
+      - [ ] Fetch BTC ATR(14) на 4h перед entry
+      - [ ] `size = base_notional * (target_vol / actual_vol)`, cap at 2x base
+      - [ ] Например: base=$150, target_vol=2%, actual_vol=1% → $300;
+            actual_vol=4% → $75 (halved)
+      - [ ] Записать actual_vol и adjusted_size в DB для трекинга
+
+      **Проблема 3: SL check раз в 4 часа — gap risk**
+      Между проверками BTC может пробить SL и уехать на -5%.
+      - [ ] При live execution: ставить conditional stop-loss ордер на бирже
+            (как в Miro execution — `_place_conditional_order()` с retry)
+      - [ ] Для paper trading: уменьшить интервал cron до 1 часа (`0 * * * 6,0`)
+      - [ ] В будущем: WS price stream + instant SL trigger (как funding capture)
+
+      **Проблема 4: Backtest без cost model**
+      `validate_weekend_macro.py` считает P&L как `(exit - entry) / entry`.
+      Нет fees, slippage, spread. На Bybit futures: 5.5 bps taker × 2 sides = 11 bps RT.
+      При avg return +1%/trade это -11% от edge.
+      - [ ] В validation script: применить `bybit_futures()` cost preset к Trade objects
+      - [ ] Пересчитать net Sharpe и scorecard с реальными costs
+      - [ ] Ожидание: Sharpe 1.83 → ~1.6 (всё ещё хороший)
+
+      **Проблема 5: Нет интеграции с PortfolioManager**
+      Weekend стратегия не участвует в portfolio risk checks.
+      Если funding capture уже at max exposure, weekend может превысить лимит.
+      - [ ] Регистрировать weekend как Strategy в PortfolioManager
+      - [ ] record_trade_open/close для exposure + drawdown tracking
+      - [ ] kill_switch должен блокировать weekend entry тоже
+
+      **Приоритет:** P1 = regime detection (safety), P2 = SL на бирже (safety),
+      P3 = vol-adjusted sizing, P4 = cost model в backtest, P5 = portfolio integration
+
+- [x] Risk manager: per-strategy allocation, conflict resolution, drawdown circuit breaker
+      (реализовано 2026-05-13: DailyRiskTracker, DrawdownTracker, kill switch в PortfolioManager)
 - [ ] Live execution через CCXT (spot для Miro, futures для VR + funding)
 - [ ] Начать с $2-5k, scale up при positive results
 
