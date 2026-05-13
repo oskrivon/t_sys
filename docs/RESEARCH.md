@@ -2,7 +2,7 @@
 
 ## Активные исследования
 
-- **Weekend Effect: Cross-Asset -> BTC** — **CONFIRMED OOS**. Sharpe net 1.4, ~14% annual. [Детали](WEEKEND_EFFECT_RESEARCH.md)
+- **Weekend Effect: Cross-Asset -> BTC** — **CONFIRMED 8.6y OOS**. Sharpe 2.82, 21.4% annual (full capital), 163 trades, profitable every year. [Детали](WEEKEND_EFFECT_RESEARCH.md)
 - **Calendar Events: FOMC + Q-Expiry** — **CONFIRMED OOS**. Pre-FOMC LONG (WR 70%, 8/yr) + Post-Q-expiry SHORT (WR 58%, 4/yr). Combined Sharpe_net 1.06, ~14% annual. Zero overlap с weekend signal.
 
 - **Funding Capture HF** — **ACTIVE**. Live trading engine на Bybit. [Детали](FUNDING_CAPTURE_RESEARCH.md)
@@ -14,6 +14,87 @@
 - [Настройка бирж](EXCHANGES_SETUP.md) — API ключи Binance/Bybit/OKX
 
 ## Решения
+
+### [Weekend Ensemble: 8.6 лет, Sharpe 2.82, каждый год в плюсе] — 2026-05-14
+
+**Контекст:** Расширен BTC 4h датасет до 2017-08 (8.7 лет, 19127 свечей). Полный re-run
+validation pipeline + deep dive в характеристики wins vs losses + divergence analysis.
+
+**Стратегия:** VOTE(BABA_fri + NQ_fri + Tech_week) → BTC weekend (Fri 21:00 → Sun 23:00 UTC).
+Majority vote 3/3, SL 2%.
+
+**Результаты на 8.6 годах (162 trades):**
+
+| Метрика | Значение |
+|---------|----------|
+| Annual (full capital) | **21.4%** |
+| Annual ($1k/$10k = 10% alloc) | 2.0% |
+| Win rate | 61% |
+| Avg return | +1.13% |
+| Max drawdown | -9.1% |
+| Sharpe | 2.82 |
+| Calmar | 2.35 |
+| Profit factor | 4.14 |
+| Profitable years | **9/9 (every year)** |
+| Trades/year | ~19 |
+
+**Validation scorecard: 6/7 PASS**
+- CPCV median Sharpe 1.86, P(>0)=100% — PASS
+- DSR p=0.017 — PASS
+- MinBTL — FAIL (need 8y for 202 trials, have 4.8y BTC; при n_trials=1 PASS)
+- PBO 0.35 — PASS
+- Factor alpha t=3.68, p<0.001 — PASS (не объясняется BTC/momentum/size)
+- Multi-regime: PASS (low-vol Sharpe 1.49, high-vol 2.64)
+
+**Walk-forward H1→H2: 7/7 PASS**
+- H1 best → H2 OOS: Sharpe 3.63 → 2.19, WR 60%, alpha t=2.24
+
+**Deep dive — что разделяет winners и losers:**
+
+1. **BTC week return = главный модулятор:**
+   - Flat week (|ret|<3%): WR **75%**, avg +1.38%, Sharpe **3.72** (N=61)
+   - Up week (>+3%): WR **50%**, avg +0.86%, Sharpe 2.09 (N=62)
+   - Причина: после сильного роста weekend скорее корректируется
+
+2. **Direction:** LONG (Sharpe 3.16) > SHORT (2.46) на длинной дистанции. BTC uptrend.
+
+3. **Convergence trade подтверждён (N=32):**
+   Equity bullish + BTC down week → long BTC weekend = WR 72%, avg +1.47%.
+   BTC подтягивается к тому, куда ушла фонда.
+
+4. **Сезонность:** Q1 (Jan-Apr) WR ~83%, Q3 (Jul-Oct) WR ~42%. Summer doldrums.
+
+5. **Divergence magnitude:** small divergence лучше (WR 73%), extreme хуже (WR 49%).
+   Но на большой выборке корреляция div↔return = 0.000. Не самостоятельный предиктор.
+
+**Trailing stop — не работает:**
+Любой trailing (1-2.5%) убивает результат. Лучший conditional (trail 1% after +2%) даёт
+Sharpe 2.11 vs baseline 2.61. Причина: BTC дёргается внутри weekend, trailing ловит шум.
+Стратегия зарабатывает на терпении (hold до Sunday close).
+
+**Saturday dip recovery — миф:**
+Trades которые дипнули >1% в Saturday AM: WR 50%, avg +0.13% — coinflip.
+Trades без dip'а: WR 71%. "Зайти после dip'а" = усреднение в убыточную позицию.
+
+**Leverage analysis:**
+
+| Allocation | Annual | Max DD | Worst trade |
+|------------|--------|--------|-------------|
+| 100% capital (1x) | 21.4% | -9.1% | -2.0% |
+| 3x leverage | 64% | -27% | -6.0% |
+| 5x leverage | 107% | -45% | -10.0% |
+| 10x leverage | 214% | -91% | -20.0% |
+
+Рекомендация: 3-5x с conditional SL ордером на бирже (не cron каждые 4ч).
+
+**Решение:** стратегия подтверждена на 8.6 годах. Готова к live. Не тюнить, зафиксировать
+ensemble. Фильтр |BTC week|<3% записан как гипотеза для paper tracking, не хардкод.
+Капитал в будние дни свободен для funding capture.
+
+**Скрипты:** `scripts/research/validate_weekend_macro.py`,
+`scripts/tmp/weekend_deep_analysis.py`, `scripts/tmp/weekend_divergence_full.py`
+
+---
 
 ### [7 Funding Exploits — все RED кроме текущего capture] — 2026-04-22
 

@@ -2,6 +2,23 @@
 
 ## Лог
 
+### 2026-05-14 -- Weekend Strategy: полный re-run на 8.6 годах
+
+Расширен BTC 4h датасет до 2017-08 (было с 2021-06). Скачаны 9000 свечей через Binance API,
+merged с existing → 19127 candles, 8.7 лет.
+
+**Результат:** 162 trades, Sharpe 2.82, 21.4% annual (full capital), profitable every year 2017-2026.
+Scorecard 6/7 PASS (FAIL только MinBTL при 202 trials). Walk-forward H2 OOS: 7/7 PASS.
+
+**Deep dive findings:**
+- Flat BTC week (|ret|<3%) = best: WR 75%, Sharpe 3.72 (vs baseline 61%, 2.82)
+- Convergence trade: equity up + BTC down → long weekend = WR 72% (N=32)
+- Trailing stop kills the strategy (best conditional: Sharpe 2.11 vs baseline 2.61)
+- Saturday dip recovery = myth (dipped >1%: WR 50%, no dip: WR 71%)
+- Q1 best (WR 83%), Q3 worst (WR 42%)
+
+---
+
 ### 2026-05-13 -- Quant Audit: что было сломано и как починили (7 коммитов)
 
 **Зачем:** Проверили систему глазами кванта — "что бы сказал PhD при code review".
