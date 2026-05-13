@@ -155,16 +155,29 @@ class PortfolioState:
 
 @dataclass
 class StrategyState:
-    """Per-strategy tracking."""
+    """Per-strategy tracking.
+
+    P&L is tracked in integer basis points (1 bps = 0.01%) to avoid
+    floating-point drift over hundreds of trades.
+    """
     strategy_id: str
     allocation_pct: float = 50.0
     current_exposure: float = 0.0
     open_positions: int = 0
-    total_pnl: float = 0.0
+    _total_pnl_bps: int = 0  # internal: basis points (1 bps = 0.01%)
     trades_count: int = 0
     wins: int = 0
     losses: int = 0
     last_signal_time: Optional[datetime] = None
+
+    @property
+    def total_pnl(self) -> float:
+        """Total P&L in percent (read-only, derived from bps)."""
+        return self._total_pnl_bps / 100.0
+
+    def add_pnl(self, pnl_pct: float) -> None:
+        """Add trade P&L (in percent). Stored as integer bps internally."""
+        self._total_pnl_bps += round(pnl_pct * 100)
 
 
 # ----------------------------------------------------------------------
@@ -332,7 +345,7 @@ class PortfolioManager:
             ss.open_positions = max(0, ss.open_positions - 1)
             if size_usd > 0:
                 ss.current_exposure = max(0.0, ss.current_exposure - size_usd)
-            ss.total_pnl += pnl_pct
+            ss.add_pnl(pnl_pct)
             if pnl_pct > 0:
                 ss.wins += 1
             else:

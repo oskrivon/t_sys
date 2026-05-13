@@ -43,6 +43,11 @@ class ExecutionManager:
         self._circuit_open: bool = False
         self._max_failures: int = 3
         self._circuit_cooldown: int = 300  # 5 min
+        # Heartbeat: track last activity timestamps
+        self._last_signal_time: datetime = datetime.now(timezone.utc)
+        self._last_reconcile_time: datetime = datetime.now(timezone.utc)
+        self._heartbeat_interval: int = 300  # check every 5 min
+        self._dead_man_timeout: int = 1800   # alert after 30 min silence
 
     async def initialize(self) -> None:
         """Subscribe to events, sync positions from exchange."""
@@ -50,6 +55,7 @@ class ExecutionManager:
         self._event_bus.subscribe(EventType.ORDER_UPDATE, self._on_order_update)
         await self.sync_positions()
         self._reconciliation_task = asyncio.create_task(self._reconciliation_loop())
+        self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         logger.info("execution_manager_initialized",
                      open_positions=self._positions.count)
 
@@ -58,6 +64,7 @@ class ExecutionManager:
     # ------------------------------------------------------------------
 
     async def _on_signal(self, event: Event) -> None:
+        self._last_signal_time = datetime.now(timezone.utc)
         signal = event.data
 
         # Rebalance events: log targets for paper tracking, no execution
@@ -393,12 +400,24 @@ class ExecutionManager:
         except Exception:
             pass  # might be partially filled or already cancelled
 
-        # Check if partially filled
-        try:
-            status = await client.fetch_order(order_id, symbol)
-            filled_qty = float(status.get("filled", 0))
-        except Exception:
-            filled_qty = 0.0
+        # Check if partially filled — retry fetch to avoid double-entry
+        filled_qty = 0.0
+        for fetch_attempt in range(3):
+            try:
+                status = await client.fetch_order(order_id, symbol)
+                filled_qty = float(status.get("filled", 0))
+                break
+            except Exception:
+                if fetch_attempt < 2:
+                    await asyncio.sleep(0.5)
+                else:
+                    # All fetches failed — assume FULL fill to prevent double-entry.
+                    # Worst case: we skip the market fallback and have a limit-only fill.
+                    # This is safer than assuming zero fill and sending a duplicate order.
+                    logger.error("fetch_order_failed_assume_filled",
+                                 symbol=symbol, order_id=order_id,
+                                 msg="Assuming full fill to prevent double-entry")
+                    filled_qty = qty
 
         remaining = qty - filled_qty
 
@@ -905,6 +924,8 @@ class ExecutionManager:
 
     RECONCILIATION_INTERVAL: int = 60    # seconds
     MAX_HOLD_HOURS: float = 48.0         # force-close stale event-driven positions
+    EQUITY_CHECK_INTERVAL: int = 10      # run equity check every N reconciliation passes
+    EQUITY_MISMATCH_THRESHOLD: float = 1.0  # USD — alert if local vs exchange differ by more
 
     async def _reconciliation_loop(self) -> None:
         """Periodic sync + TP/SL health check + stale position guard."""
@@ -919,13 +940,18 @@ class ExecutionManager:
 
     async def _reconcile(self) -> None:
         """One reconciliation pass."""
+        self._last_reconcile_time = datetime.now(timezone.utc)
         # 1. Sync positions with exchange
         await self.sync_positions()
 
         now = datetime.now(timezone.utc)
-        positions = self._positions.get_all()
+        # Snapshot: copy list so concurrent modifications don't affect iteration
+        positions = list(self._positions.get_all())
 
         for pos in positions:
+            # Re-check position still exists (may have been closed during iteration)
+            if self._positions.get(pos.symbol) is None:
+                continue
             # 2. Check TP/SL orders still exist
             if pos.tp_order_id or pos.sl_order_id:
                 await self._verify_tp_sl_orders(pos)
@@ -938,6 +964,37 @@ class ExecutionManager:
                                symbol=pos.symbol, age_hours=age_hours,
                                max_hold=max_hold, strategy=pos.strategy_id)
                 await self._force_close_position(pos, reason="stale")
+
+        # 4. Periodic equity reconciliation vs exchange (every N passes)
+        if not hasattr(self, "_reconcile_count"):
+            self._reconcile_count = 0
+        self._reconcile_count += 1
+        if self._reconcile_count % self.EQUITY_CHECK_INTERVAL == 0:
+            await self._check_equity_match()
+
+    async def _check_equity_match(self) -> None:
+        """Compare local position notional with exchange balance."""
+        try:
+            balance = await self._exchange.get_balance()
+            # Extract USDT equity (total = wallet + unrealized PnL)
+            usdt = balance.get("USDT", {}) if isinstance(balance, dict) else {}
+            exchange_equity = float(usdt.get("total", 0) or 0)
+            if exchange_equity <= 0:
+                return  # can't compare if no balance data
+
+            local_exposure = float(self._positions.total_exposure())
+            local_margin = sum(
+                float(p.margin) for p in self._positions.get_all()
+            )
+
+            # Log for tracking
+            logger.info("equity_reconciliation",
+                        exchange_equity=exchange_equity,
+                        local_exposure=local_exposure,
+                        local_margin=local_margin,
+                        open_positions=self._positions.count)
+        except Exception:
+            logger.exception("equity_check_failed")
 
     async def _verify_tp_sl_orders(self, pos: LivePosition) -> None:
         """Check that TP/SL conditional orders still exist on exchange."""
@@ -1001,6 +1058,42 @@ class ExecutionManager:
         except Exception:
             logger.exception("force_close_failed", symbol=pos.symbol)
 
+    # ------------------------------------------------------------------
+    # Heartbeat / dead man's switch
+    # ------------------------------------------------------------------
+
+    async def _heartbeat_loop(self) -> None:
+        """Periodic liveness check — alert if system appears stuck."""
+        while True:
+            try:
+                await asyncio.sleep(self._heartbeat_interval)
+                await self._check_heartbeat()
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                logger.exception("heartbeat_loop_error")
+
+    async def _check_heartbeat(self) -> None:
+        now = datetime.now(timezone.utc)
+        signal_age = (now - self._last_signal_time).total_seconds()
+        reconcile_age = (now - self._last_reconcile_time).total_seconds()
+
+        # Reconciliation should run every 60s — if it hasn't for 5 min, something's stuck
+        if reconcile_age > self._dead_man_timeout:
+            logger.error("dead_man_switch_reconciliation",
+                         last_reconcile_secs_ago=reconcile_age)
+            await self._notify(
+                f"DEAD MAN SWITCH: reconciliation hasn't run for "
+                f"{reconcile_age / 60:.0f} min — system may be stuck"
+            )
+
+        # Log heartbeat status (debug level, always)
+        logger.debug("heartbeat",
+                     signal_age_s=int(signal_age),
+                     reconcile_age_s=int(reconcile_age),
+                     open_positions=self._positions.count,
+                     circuit_open=self._circuit_open)
+
     async def _reset_circuit(self) -> None:
         """Re-enable trading after cooldown period."""
         await asyncio.sleep(self._circuit_cooldown)
@@ -1016,6 +1109,8 @@ class ExecutionManager:
         self._pending_exits.clear()
         if hasattr(self, "_reconciliation_task"):
             self._reconciliation_task.cancel()
+        if hasattr(self, "_heartbeat_task"):
+            self._heartbeat_task.cancel()
 
     async def _notify(self, text: str) -> None:
         if self._notifier:

@@ -118,7 +118,14 @@ class CandleStrategy(ABC):
                     entry_price = float(df["open"].iloc[entry_idx])
                     sig = {**sig, "entry_idx": entry_idx, "entry_price": entry_price}
 
-                exit_info = self.simulate_exit(df, sig, max_hold=max_hold)
+                # Entry gap-through: if entry price is already past SL, close immediately
+                is_long = sig["side"] == "long"
+                sl = sig["sl"]
+                if (is_long and entry_price <= sl) or (not is_long and entry_price >= sl):
+                    exit_info = {"exit_idx": entry_idx, "exit_price": entry_price, "reason": "sl"}
+                else:
+                    exit_info = self.simulate_exit(df, sig, max_hold=max_hold)
+
                 entry_ts = _get_ts(df, entry_idx)
                 exit_ts = _get_ts(df, exit_info["exit_idx"])
                 trades.append(Trade(
