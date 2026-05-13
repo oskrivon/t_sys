@@ -2,6 +2,46 @@
 
 ## Лог
 
+### 2026-05-13 -- Quant Audit: Statistical Sins, Risk Management, Execution, ML Pipeline, Regime Detection
+
+Полный аудит системы "глазами кванта". 3 коммита, 6 подсистем затронуто.
+
+**Statistical Sins (fix):**
+- `find_swing_points()`: добавлен `causal=True` — окно `[i-order, i]` вместо симметричного `[i-order, i+order]`. Убран look-ahead bias.
+- `get_rolling_levels()`: использует causal mode, убран redundant buffer.
+- Backtest metrics: Sortino, Calmar, max consecutive losses, `universe_note` для survivorship bias awareness.
+
+**Risk Management (new):**
+- `DailyRiskTracker`: kill switch при daily loss > 5% (was 10%), auto-reset UTC midnight.
+- `DrawdownTracker`: equity HWM, hard stop при drawdown > 15%.
+- Оба интегрированы в `PortfolioManager._passes_risk_checks()`.
+- `compute_volatility_adjusted_size()`: inverse-vol sizing (BTC 4.5x > PEPE при equal risk).
+- Paper stats: Sharpe, Sortino, max drawdown, consecutive losses, avg hold.
+
+**Execution Hardening:**
+- TP/SL: `_place_conditional_order()` с retry + store order IDs в `LivePosition`.
+- Reconciliation loop (60s): sync позиций, re-place пропавшие TP/SL, force-close stale (>48h).
+- Event-driven sizing: передаётся `signal.metadata` в `_compute_qty()` (было: exchange minimum).
+
+**Backtest Realism:**
+- Gap-through fills: SL fills at candle open when it gaps past stop (e.g. SL=95, open=92 → fill at 92).
+- `entry_on_next_open=True` по умолчанию — entry на open следующей свечи.
+
+**ML Pipeline:**
+- `ModelRegistry`: versioned models (`miro_gb_v{N}.joblib`), `load_latest()`.
+- `DriftMonitor`: rolling z-score vs training distribution, flags drifted features.
+- `PredictionTracker`: Brier score + rolling accuracy, warns on poor calibration.
+- `ModelMeta`: JSON sidecar с training stats.
+
+**Regime Detection (new `src/strategy/regime.py`):**
+- `detect_regime()`: ADX(14), Kaufman efficiency ratio, vol spike → TRENDING/RANGING/VOLATILE.
+- Интегрирован в screener: RANGING/VOLATILE → skip, TRENDING → only trend-aligned signals.
+- 3 новых фичи в `compute_features()`: `regime_adx`, `regime_efficiency`, `regime_vol_ratio`.
+
+**Осталось:** Vision scoring validation (записано в PLAN.md с развёрнутым планом).
+
+---
+
 ### 2026-05-12 -- Validation Pipeline: CPCV, DSR, PBO, Factor Decomposition, Regime Detection
 
 Реализован полный пайплайн статистической валидации стратегий (`src/validation/`):

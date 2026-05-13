@@ -137,6 +137,49 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 
 ## TODO
 
+### Vision Scoring: валидация против реальных исходов + решение keep/drop
+
+**Контекст:** Vision scoring (Claude Sonnet via OpenRouter) оценивает графики 1-10.
+Текущий статус: используется как фильтр (score>=8), даёт WR 57.8% vs ML-only 31%.
+Но эти числа из walk-forward backtest — нет валидации на live/paper trades.
+
+**Проблема:** Мы не знаем:
+1. Корреляция vision score с реальными исходами paper trades (а не бэктест)
+2. Воспроизводимость — один и тот же график получает разные scores при повторных вызовах
+3. Cost/benefit — ~$0.60/мес (текущий объём), но при scale-up?
+4. Нет ли у Vision предвзятости (e.g. всегда даёт высокий score trending charts → survivorship)
+
+**План:**
+
+Фаза 1 — Сбор данных (автоматический):
+- [ ] В `scanner.py`: при каждом vision-scored signal записывать в SQLite:
+      `(symbol, signal_time, vision_score, ml_score, signal_type, regime, outcome)`
+      Outcome заполняется позже через paper trading tracker
+- [ ] Двойной вызов: раз в 10 сигналов вызывать Vision 2 раза на один chart
+      для измерения reproducibility (std между двумя scores)
+- [ ] Минимум: 100 сигналов с outcomes (при ~5-10/день = 2-3 недели)
+
+Фаза 2 — Статистический анализ (скрипт `scripts/research/validate_vision.py`):
+- [ ] **Rank-biserial correlation** vision_score vs win/loss (робастнее Pearson)
+- [ ] **Calibration plot**: P(win | vision_score=1..10) — monotonically increasing?
+- [ ] **Reproducibility**: std между дублями, % случаев когда score отличается >2
+- [ ] **Conditional value**: vision добавляет alpha поверх ML? Partial correlation
+      controlling for ml_score — если partial corr ~0, vision бесполезен
+- [ ] **Regime interaction**: vision полезен только в high-vol? low-vol? all?
+- [ ] **ROC/AUC**: vision_score как классификатор win/loss (AUC > 0.6 = полезен)
+- [ ] **Cost-adjusted edge**: extra edge from vision × trades/month - API cost
+
+Фаза 3 — Решение:
+- [ ] Если AUC > 0.65 AND partial corr > 0.1 → **keep**, зафиксировать threshold
+- [ ] Если AUC 0.55-0.65 → **conditional keep**, использовать только в high-vol
+- [ ] Если AUC < 0.55 OR partial corr < 0.05 → **drop**, убрать из pipeline
+- [ ] Записать решение в `docs/RESEARCH.md` → Решения
+
+**Ожидаемый результат:** чёткий ответ "vision добавляет X% edge за $Y/мес"
+или "vision — шум, маскирующийся под signal из-за бэктест bias".
+
+---
+
 ### [CRITICAL] Пересмотр стратегий по результатам validation pipeline (2026-05-12)
 
 Validation scorecard (`src/validation/`) показал: **ни одна стратегия не прошла все gates.**
