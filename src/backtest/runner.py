@@ -46,7 +46,14 @@ class CandleStrategy(ABC):
         signal: dict,
         max_hold: int = 200,
     ) -> dict:
-        """Walk candles from entry checking SL/TP. Returns exit info dict."""
+        """Walk candles from entry checking SL/TP. Returns exit info dict.
+
+        Fill model:
+        - SL checked before TP on same candle (conservative / worst-case).
+        - Gap-through: if candle opens beyond SL, fill at the open (not at
+          SL level) — models real slippage from overnight gaps.
+        - TP fills at TP price (limit order assumption).
+        """
         entry_idx = signal["entry_idx"]
         is_long = signal["side"] == "long"
         sl = signal["sl"]
@@ -55,15 +62,21 @@ class CandleStrategy(ABC):
         for i in range(entry_idx + 1, min(entry_idx + max_hold + 1, len(df))):
             h = df["high"].iloc[i]
             lo = df["low"].iloc[i]
+            o = df["open"].iloc[i]
 
             if is_long:
+                # SL check (conservative: checked first)
                 if lo <= sl:
-                    return {"exit_idx": i, "exit_price": sl, "reason": "sl"}
+                    # Gap-through: candle opened below SL → fill at open
+                    fill = min(sl, o) if o < sl else sl
+                    return {"exit_idx": i, "exit_price": fill, "reason": "sl"}
                 if h >= tp:
                     return {"exit_idx": i, "exit_price": tp, "reason": "tp"}
             else:
                 if h >= sl:
-                    return {"exit_idx": i, "exit_price": sl, "reason": "sl"}
+                    # Gap-through: candle opened above SL → fill at open
+                    fill = max(sl, o) if o > sl else sl
+                    return {"exit_idx": i, "exit_price": fill, "reason": "sl"}
                 if lo <= tp:
                     return {"exit_idx": i, "exit_price": tp, "reason": "tp"}
 
@@ -80,23 +93,40 @@ class CandleStrategy(ABC):
         data: dict[str, pd.DataFrame],
         position_size: float = 1000.0,
         max_hold: int = 200,
+        entry_on_next_open: bool = True,
         **params: Any,
     ) -> list[Trade]:
+        """Run strategy on all symbols.
+
+        Args:
+            entry_on_next_open: If True, shift entry to next candle's open
+                price instead of using the signal's entry_price. This prevents
+                look-ahead bias from entering at the signal candle's close.
+        """
         trades: list[Trade] = []
         for symbol, df in data.items():
             if len(df) < 10:
                 continue
             signals = self.generate_signals(symbol, df)
             for sig in signals:
+                entry_idx = sig["entry_idx"]
+                entry_price = sig["entry_price"]
+
+                # Shift entry to next candle open (prevents look-ahead)
+                if entry_on_next_open and entry_idx + 1 < len(df):
+                    entry_idx = entry_idx + 1
+                    entry_price = float(df["open"].iloc[entry_idx])
+                    sig = {**sig, "entry_idx": entry_idx, "entry_price": entry_price}
+
                 exit_info = self.simulate_exit(df, sig, max_hold=max_hold)
-                entry_ts = _get_ts(df, sig["entry_idx"])
+                entry_ts = _get_ts(df, entry_idx)
                 exit_ts = _get_ts(df, exit_info["exit_idx"])
                 trades.append(Trade(
                     symbol=symbol,
                     side=Side(sig["side"]),
                     entry_time=entry_ts,
                     exit_time=exit_ts,
-                    entry_price=sig["entry_price"],
+                    entry_price=entry_price,
                     exit_price=exit_info["exit_price"],
                     size_usd=position_size,
                     exit_reason=ExitReason(exit_info["reason"]),

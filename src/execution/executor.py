@@ -49,6 +49,7 @@ class ExecutionManager:
         self._event_bus.subscribe(EventType.SIGNAL_GENERATED, self._on_signal)
         self._event_bus.subscribe(EventType.ORDER_UPDATE, self._on_order_update)
         await self.sync_positions()
+        self._reconciliation_task = asyncio.create_task(self._reconciliation_loop())
         logger.info("execution_manager_initialized",
                      open_positions=self._positions.count)
 
@@ -522,11 +523,61 @@ class ExecutionManager:
     # Event-driven execution (Miro-type: entry + TP/SL)
     # ------------------------------------------------------------------
 
+    async def _place_conditional_order(
+        self,
+        symbol: str,
+        side: OrderSide,
+        order_type: OrderType,
+        amount: Decimal,
+        stop_price: Decimal,
+        retries: int = 1,
+    ) -> Optional[str]:
+        """Place a conditional order with retry. Returns order ID or None."""
+        for attempt in range(1 + retries):
+            try:
+                order = await self._exchange.create_order(
+                    symbol=symbol,
+                    side=side,
+                    order_type=order_type,
+                    amount=amount,
+                    stop_price=stop_price,
+                    reduceOnly=True,
+                )
+                order_id = order.id if order else None
+                if order_id:
+                    logger.info("conditional_order_placed",
+                                symbol=symbol, type=order_type.value,
+                                stop_price=str(stop_price), order_id=order_id)
+                    return order_id
+                logger.warning("conditional_order_no_id",
+                               symbol=symbol, type=order_type.value,
+                               attempt=attempt + 1)
+            except Exception:
+                logger.exception("conditional_order_failed",
+                                 symbol=symbol, type=order_type.value,
+                                 attempt=attempt + 1)
+                if attempt < retries:
+                    await asyncio.sleep(1)
+
+        await self._notify(
+            f"ALERT: Failed to place {order_type.value} for {symbol} "
+            f"at {stop_price} after {1 + retries} attempts — position UNPROTECTED"
+        )
+        return None
+
     async def _execute_event_driven(self, signal: TradeSignal) -> None:
         side = OrderSide.BUY if signal.side == Side.LONG else OrderSide.SELL
         close_side = OrderSide.SELL if side == OrderSide.BUY else OrderSide.BUY
 
-        qty = await self._compute_qty(signal.symbol)
+        # Position sizing: use signal metadata for vol-adjusted sizing
+        meta = signal.metadata or {}
+        qty = await self._compute_qty(
+            signal.symbol,
+            target_notional=meta.get("target_notional", 0),
+            atr_pct=meta.get("atr_pct", 0.0),
+            capital=meta.get("capital", 0.0),
+            risk_per_trade_pct=meta.get("risk_per_trade_pct", 0.0),
+        )
 
         # Market entry
         t0 = asyncio.get_event_loop().time()
@@ -539,25 +590,18 @@ class ExecutionManager:
         latency_ms = (asyncio.get_event_loop().time() - t0) * 1000
         entry_price = order.average or order.price or Decimal("0")
 
-        # Place TP and SL as conditional orders
-        if signal.tp:
-            await self._exchange.create_order(
-                symbol=signal.symbol,
-                side=close_side,
-                order_type=OrderType.TAKE_PROFIT,
-                amount=qty,
-                stop_price=Decimal(str(signal.tp)),
-                reduceOnly=True,
-            )
-        if signal.sl:
-            await self._exchange.create_order(
-                symbol=signal.symbol,
-                side=close_side,
-                order_type=OrderType.STOP_LOSS,
-                amount=qty,
-                stop_price=Decimal(str(signal.sl)),
-                reduceOnly=True,
-            )
+        # Place TP and SL with verification + retry
+        tp_order_id = None
+        sl_order_id = None
+        tp_dec = Decimal(str(signal.tp)) if signal.tp else None
+        sl_dec = Decimal(str(signal.sl)) if signal.sl else None
+
+        if tp_dec:
+            tp_order_id = await self._place_conditional_order(
+                signal.symbol, close_side, OrderType.TAKE_PROFIT, qty, tp_dec)
+        if sl_dec:
+            sl_order_id = await self._place_conditional_order(
+                signal.symbol, close_side, OrderType.STOP_LOSS, qty, sl_dec)
 
         pos = LivePosition(
             symbol=signal.symbol,
@@ -566,6 +610,10 @@ class ExecutionManager:
             entry_price=entry_price,
             strategy_id=signal.strategy_id,
             metadata=signal.metadata,
+            tp_order_id=tp_order_id,
+            sl_order_id=sl_order_id,
+            tp_price=tp_dec,
+            sl_price=sl_dec,
         )
         self._positions.open(pos)
 
@@ -587,6 +635,7 @@ class ExecutionManager:
             await self._notify(
                 f"ENTRY: {signal.side.value.upper()} {signal.symbol}\n"
                 f"Entry: {entry_price}, TP: {signal.tp}, SL: {signal.sl}\n"
+                f"TP/SL IDs: {tp_order_id}/{sl_order_id}\n"
                 f"Confidence: {signal.confidence:.2f}, Latency: {latency_ms:.0f}ms"
             )
 
@@ -850,6 +899,108 @@ class ExecutionManager:
         except Exception:
             logger.exception("position_sync_failed")
 
+    # ------------------------------------------------------------------
+    # Periodic reconciliation
+    # ------------------------------------------------------------------
+
+    RECONCILIATION_INTERVAL: int = 60    # seconds
+    MAX_HOLD_HOURS: float = 48.0         # force-close stale event-driven positions
+
+    async def _reconciliation_loop(self) -> None:
+        """Periodic sync + TP/SL health check + stale position guard."""
+        while True:
+            try:
+                await asyncio.sleep(self.RECONCILIATION_INTERVAL)
+                await self._reconcile()
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                logger.exception("reconciliation_loop_error")
+
+    async def _reconcile(self) -> None:
+        """One reconciliation pass."""
+        # 1. Sync positions with exchange
+        await self.sync_positions()
+
+        now = datetime.now(timezone.utc)
+        positions = self._positions.get_all()
+
+        for pos in positions:
+            # 2. Check TP/SL orders still exist
+            if pos.tp_order_id or pos.sl_order_id:
+                await self._verify_tp_sl_orders(pos)
+
+            # 3. Stale position guard — force close if held too long
+            max_hold = pos.metadata.get("max_hold_hours", self.MAX_HOLD_HOURS)
+            age_hours = (now - pos.opened_at).total_seconds() / 3600
+            if age_hours > max_hold and pos.strategy_id != "funding_capture":
+                logger.warning("stale_position_force_close",
+                               symbol=pos.symbol, age_hours=age_hours,
+                               max_hold=max_hold, strategy=pos.strategy_id)
+                await self._force_close_position(pos, reason="stale")
+
+    async def _verify_tp_sl_orders(self, pos: LivePosition) -> None:
+        """Check that TP/SL conditional orders still exist on exchange."""
+        try:
+            open_orders = await self._exchange.get_open_orders(pos.symbol)
+            open_ids = {o.id for o in open_orders if o.id}
+
+            tp_missing = pos.tp_order_id and pos.tp_order_id not in open_ids
+            sl_missing = pos.sl_order_id and pos.sl_order_id not in open_ids
+
+            if tp_missing and sl_missing:
+                # Both gone — likely position was closed on exchange
+                # sync_positions should have caught this, but double-check
+                logger.info("tp_sl_both_gone", symbol=pos.symbol)
+                return
+
+            # Re-place missing orders
+            close_side = OrderSide.SELL if pos.side == "long" else OrderSide.BUY
+
+            if tp_missing and pos.tp_price:
+                logger.warning("tp_order_missing_replating", symbol=pos.symbol,
+                               old_id=pos.tp_order_id)
+                new_id = await self._place_conditional_order(
+                    pos.symbol, close_side, OrderType.TAKE_PROFIT,
+                    pos.qty, pos.tp_price)
+                pos.tp_order_id = new_id
+
+            if sl_missing and pos.sl_price:
+                logger.warning("sl_order_missing_replating", symbol=pos.symbol,
+                               old_id=pos.sl_order_id)
+                new_id = await self._place_conditional_order(
+                    pos.symbol, close_side, OrderType.STOP_LOSS,
+                    pos.qty, pos.sl_price)
+                pos.sl_order_id = new_id
+
+        except Exception:
+            logger.exception("tp_sl_verify_failed", symbol=pos.symbol)
+
+    async def _force_close_position(self, pos: LivePosition, reason: str) -> None:
+        """Market-close a stale or orphaned position."""
+        try:
+            close_side = OrderSide.SELL if pos.side == "long" else OrderSide.BUY
+            await self._exchange.create_order(
+                symbol=pos.symbol,
+                side=close_side,
+                order_type=OrderType.MARKET,
+                amount=pos.qty,
+                reduceOnly=True,
+            )
+            self._positions.close(pos.symbol)
+            await self._event_bus.publish(Event(
+                type=EventType.POSITION_CLOSED,
+                data={"symbol": pos.symbol, "reason": reason,
+                       "strategy": pos.strategy_id},
+                source="executor",
+            ))
+            await self._notify(
+                f"FORCE CLOSE ({reason}): {pos.symbol} ({pos.strategy_id})\n"
+                f"Side: {pos.side}, Entry: {pos.entry_price}, Qty: {pos.qty}"
+            )
+        except Exception:
+            logger.exception("force_close_failed", symbol=pos.symbol)
+
     async def _reset_circuit(self) -> None:
         """Re-enable trading after cooldown period."""
         await asyncio.sleep(self._circuit_cooldown)
@@ -859,10 +1010,12 @@ class ExecutionManager:
         await self._notify("Circuit breaker reset — trading resumed")
 
     async def cancel_pending_exits(self) -> None:
-        """Cancel all pending funding exit tasks (for shutdown)."""
+        """Cancel all pending funding exit tasks and reconciliation (for shutdown)."""
         for sym, task in self._pending_exits.items():
             task.cancel()
         self._pending_exits.clear()
+        if hasattr(self, "_reconciliation_task"):
+            self._reconciliation_task.cancel()
 
     async def _notify(self, text: str) -> None:
         if self._notifier:

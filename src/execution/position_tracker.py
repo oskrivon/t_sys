@@ -21,6 +21,11 @@ class LivePosition:
     # For funding capture: scheduled exit time
     exit_at: Optional[datetime] = None
     metadata: dict = field(default_factory=dict)
+    # TP/SL order IDs for reconciliation
+    tp_order_id: Optional[str] = None
+    sl_order_id: Optional[str] = None
+    tp_price: Optional[Decimal] = None
+    sl_price: Optional[Decimal] = None
 
     @property
     def notional(self) -> Decimal:
