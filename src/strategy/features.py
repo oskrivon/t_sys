@@ -1,7 +1,8 @@
 """Feature computation for ML classifier.
 
 Extracted from scripts/research/miro_ml_classifier.py.
-29 features used by GradientBoosting to predict P(win).
+32 features used by GradientBoosting to predict P(win).
+(29 base + 3 regime features added in v2.)
 """
 from __future__ import annotations
 
@@ -9,6 +10,7 @@ import pandas as pd
 
 from .levels import is_round_number
 from .models import Level, SignalType
+from .regime import detect_regime
 
 
 def compute_features(
@@ -152,5 +154,11 @@ def compute_features(
     else:
         f["hour_utc"] = 12.0
         f["day_of_week"] = 3.0
+
+    # -- Regime features --
+    regime_state = detect_regime(df, idx)
+    f["regime_adx"] = regime_state.adx
+    f["regime_efficiency"] = regime_state.efficiency_ratio
+    f["regime_vol_ratio"] = regime_state.vol_ratio
 
     return f

@@ -20,6 +20,7 @@ from src.strategy.signals import (
 )
 from src.strategy.features import compute_features
 from src.strategy.models import Breakout, Level, Signal, ScreenerResult
+from src.strategy.regime import detect_regime, Regime
 
 from .config import ScreenerConfig
 from .state import (
@@ -133,13 +134,47 @@ class MiroScreener:
             signals = self._scan_symbol(symbol, df, d1_df)
             all_signals.extend(signals)
 
-        # 5. Score and alert
+        # 5. Regime filter + Score and alert
         alerted = 0
         for signal in all_signals:
             ts_key = signal.timestamp.isoformat() if signal.timestamp else now.isoformat()
 
             if self.state.was_alerted(signal.symbol, signal.signal_type.value, ts_key):
                 continue
+
+            # Regime filter: skip signals in unfavorable regimes
+            sym_df = datasets.get(signal.symbol)
+            if sym_df is not None and len(sym_df) > 0:
+                regime_state = detect_regime(sym_df, len(sym_df) - 1)
+                signal.metadata = signal.metadata or {}
+                signal.metadata["regime"] = regime_state.regime.value
+                signal.metadata["regime_adx"] = regime_state.adx
+                signal.metadata["regime_er"] = regime_state.efficiency_ratio
+
+                if regime_state.regime == Regime.VOLATILE:
+                    log.debug("signal_skipped_volatile",
+                              symbol=signal.symbol, vol_ratio=regime_state.vol_ratio)
+                    continue
+
+                if regime_state.regime == Regime.RANGING:
+                    log.debug("signal_skipped_ranging",
+                              symbol=signal.symbol, adx=regime_state.adx,
+                              er=regime_state.efficiency_ratio)
+                    continue
+
+                # Trending: only allow signals aligned with trend direction
+                is_long = "long" in signal.signal_type.value
+                if regime_state.trend_direction != 0:
+                    trend_aligned = (
+                        (is_long and regime_state.trend_direction > 0)
+                        or (not is_long and regime_state.trend_direction < 0)
+                    )
+                    if not trend_aligned:
+                        log.debug("signal_skipped_counter_trend",
+                                  symbol=signal.symbol,
+                                  signal_type=signal.signal_type.value,
+                                  trend_dir=regime_state.trend_direction)
+                        continue
 
             # ML scoring
             if self.ml_scorer and self.ml_scorer.is_loaded:
