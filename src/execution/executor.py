@@ -729,12 +729,58 @@ class ExecutionManager:
 
     TAKER_FEE: float = 0.00060  # Bybit VIP0 taker fee per side (6bps)
 
-    async def _compute_qty(self, symbol: str, target_notional: float = 0) -> Decimal:
-        """Compute order quantity from target_notional, accounting for fees.
+    @staticmethod
+    def compute_volatility_adjusted_size(
+        capital: float,
+        risk_per_trade_pct: float,
+        atr_pct: float,
+        max_position_pct: float = 30.0,
+    ) -> float:
+        """Compute position size (USD) scaled by instrument volatility.
 
-        Subtracts round-trip fees from notional so actual cost stays within budget.
-        Falls back to exchange minimum quantity if no target given.
+        Args:
+            capital: Available capital for this strategy.
+            risk_per_trade_pct: Max % of capital to risk per trade (e.g. 1.0).
+            atr_pct: ATR(14) / close — the instrument's recent volatility
+                as a fraction (e.g. 0.03 for 3%).
+            max_position_pct: Hard cap on position as % of capital.
+
+        Returns:
+            Target notional in USD.
         """
+        if atr_pct <= 0:
+            atr_pct = 0.02  # fallback: assume 2% daily vol
+
+        risk_usd = capital * risk_per_trade_pct / 100
+        position_usd = risk_usd / atr_pct
+        cap = capital * max_position_pct / 100
+        return min(position_usd, cap)
+
+    async def _compute_qty(
+        self,
+        symbol: str,
+        target_notional: float = 0,
+        atr_pct: float = 0.0,
+        capital: float = 0.0,
+        risk_per_trade_pct: float = 0.0,
+    ) -> Decimal:
+        """Compute order quantity, optionally volatility-adjusted.
+
+        If ``atr_pct``, ``capital``, and ``risk_per_trade_pct`` are all
+        provided, the target notional is computed via inverse-vol sizing.
+        Otherwise falls back to the explicit ``target_notional``.
+        """
+        # Volatility-adjusted sizing when metadata is available
+        if atr_pct > 0 and capital > 0 and risk_per_trade_pct > 0:
+            target_notional = self.compute_volatility_adjusted_size(
+                capital=capital,
+                risk_per_trade_pct=risk_per_trade_pct,
+                atr_pct=atr_pct,
+            )
+            logger.debug("vol_adjusted_size",
+                         symbol=symbol, atr_pct=atr_pct,
+                         target_notional=target_notional)
+
         market = self._exchange.client.market(symbol)
         min_qty = float(market.get("limits", {}).get("amount", {}).get("min", 1))
         qty_step = float(market.get("precision", {}).get("amount", min_qty))

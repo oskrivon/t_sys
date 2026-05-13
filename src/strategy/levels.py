@@ -31,19 +31,41 @@ def find_swing_points(
     start: int,
     end: int,
     order: int = 5,
+    causal: bool = True,
 ) -> list[tuple[int, float, str]]:
     """Find swing highs/lows in range [start, end).
+
+    Args:
+        causal: If True (default), only uses data up to ``end`` — no future
+            candles beyond the boundary are read.  Safe for live trading and
+            backtests.  When False, the classic symmetric window is used
+            (requires ``order`` candles after each candidate).
 
     Returns list of (idx, price, "high"|"low").
     """
     points = []
-    for i in range(max(start, order), min(end, len(df) - order)):
-        window_high = df["high"].iloc[i - order : i + order + 1]
-        if df["high"].iloc[i] == window_high.max():
-            points.append((i, df["high"].iloc[i], "high"))
-        window_low = df["low"].iloc[i - order : i + order + 1]
-        if df["low"].iloc[i] == window_low.min():
-            points.append((i, df["low"].iloc[i], "low"))
+    if causal:
+        # Causal mode: the window for candidate *i* is [i-order, i].
+        # We need at least ``order`` candles before the candidate.
+        lo = max(start + order, order)
+        hi = min(end, len(df))
+        for i in range(lo, hi):
+            window_high = df["high"].iloc[i - order : i + 1]
+            if df["high"].iloc[i] == window_high.max():
+                points.append((i, df["high"].iloc[i], "high"))
+            window_low = df["low"].iloc[i - order : i + 1]
+            if df["low"].iloc[i] == window_low.min():
+                points.append((i, df["low"].iloc[i], "low"))
+    else:
+        # Non-causal: symmetric window [i-order, i+order].
+        # Useful for offline analysis on complete datasets.
+        for i in range(max(start, order), min(end, len(df) - order)):
+            window_high = df["high"].iloc[i - order : i + order + 1]
+            if df["high"].iloc[i] == window_high.max():
+                points.append((i, df["high"].iloc[i], "high"))
+            window_low = df["low"].iloc[i - order : i + order + 1]
+            if df["low"].iloc[i] == window_low.min():
+                points.append((i, df["low"].iloc[i], "low"))
     return points
 
 
@@ -119,15 +141,16 @@ def get_rolling_levels(
     """Get S/R levels from the last `lookback` candles.
 
     Only returns levels whose last touch is at least `min_level_age`
-    candles ago (no look-ahead bias).
+    candles ago (no look-ahead bias).  Uses causal swing detection —
+    no future data beyond ``current_idx`` is ever read.
     """
     start = max(0, current_idx - lookback)
-    end = current_idx - swing_order  # buffer for swing detection
+    end = current_idx  # causal mode handles the boundary internally
 
     if end - start < 50:
         return []
 
-    points = find_swing_points(df, start, end, order=swing_order)
+    points = find_swing_points(df, start, end, order=swing_order, causal=True)
     levels = cluster_points(points, tolerance_pct, min_touches)
 
     return [lv for lv in levels if current_idx - lv.last_idx >= min_level_age]

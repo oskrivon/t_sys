@@ -109,7 +109,9 @@ class TradingConfig(BaseSettings):
 
     # Risk management
     max_position_size_pct: float = Field(default=5.0, ge=0.1, le=100.0)
-    max_daily_loss_pct: float = Field(default=10.0, ge=1.0, le=100.0)
+    max_daily_loss_pct: float = Field(default=5.0, ge=0.5, le=50.0)
+    max_drawdown_pct: float = Field(default=15.0, ge=1.0, le=50.0)
+    risk_per_trade_pct: float = Field(default=1.0, ge=0.1, le=10.0)
     default_leverage: int = Field(default=1, ge=1, le=125)
 
     # Order settings
