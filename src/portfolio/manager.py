@@ -313,11 +313,25 @@ class PortfolioManager:
             self._conflict_positions[symbol] = []
         self._conflict_positions[symbol].append((strategy_id, side))
 
-    def record_trade_close(self, strategy_id: str, symbol: str, pnl_pct: float) -> None:
-        """Record that a trade was closed. Checks daily loss limit."""
+    def record_trade_close(
+        self,
+        strategy_id: str,
+        symbol: str,
+        pnl_pct: float,
+        size_usd: float = 0.0,
+    ) -> None:
+        """Record that a trade was closed. Checks daily loss limit.
+
+        Args:
+            size_usd: Notional size of the closed position.  Used to reduce
+                ``current_exposure``.  If 0, exposure is left unchanged
+                (backward compatible).
+        """
         ss = self.state.strategies.get(strategy_id)
         if ss:
             ss.open_positions = max(0, ss.open_positions - 1)
+            if size_usd > 0:
+                ss.current_exposure = max(0.0, ss.current_exposure - size_usd)
             ss.total_pnl += pnl_pct
             if pnl_pct > 0:
                 ss.wins += 1

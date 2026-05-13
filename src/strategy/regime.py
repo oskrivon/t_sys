@@ -102,18 +102,21 @@ def detect_regime(
 def _compute_adx(
     df: pd.DataFrame, idx: int, period: int = 14,
 ) -> tuple[float, float, float]:
-    """Compute ADX, +DI, -DI at index ``idx`` using Wilder smoothing."""
-    # We need at least 2*period candles of history
-    start = max(0, idx - period * 3)
+    """Compute ADX, +DI, -DI at index ``idx`` using Wilder smoothing.
+
+    Full implementation: smooth TR/+DM/-DM → DI → DX series → smooth DX → ADX.
+    """
+    # Need 2*period bars minimum for ADX (period to seed + period to smooth DX)
+    start = max(0, idx - period * 4)
     h = df["high"].iloc[start : idx + 1].values.astype(float)
     lo = df["low"].iloc[start : idx + 1].values.astype(float)
     c = df["close"].iloc[start : idx + 1].values.astype(float)
 
     n = len(h)
-    if n < period + 1:
+    if n < 2 * period + 1:
         return 0.0, 0.0, 0.0
 
-    # True Range, +DM, -DM
+    # True Range, +DM, -DM for each bar
     tr = np.empty(n - 1)
     plus_dm = np.empty(n - 1)
     minus_dm = np.empty(n - 1)
@@ -126,36 +129,62 @@ def _compute_adx(
         plus_dm[j] = up if (up > down and up > 0) else 0.0
         minus_dm[j] = down if (down > up and down > 0) else 0.0
 
-    # Wilder smoothing (EMA with alpha=1/period)
-    atr = _wilder_smooth(tr, period)
-    smooth_plus = _wilder_smooth(plus_dm, period)
-    smooth_minus = _wilder_smooth(minus_dm, period)
+    # Wilder-smooth TR, +DM, -DM into full series
+    atr_series = _wilder_smooth_series(tr, period)
+    plus_series = _wilder_smooth_series(plus_dm, period)
+    minus_series = _wilder_smooth_series(minus_dm, period)
 
-    if atr <= 0:
-        return 0.0, 0.0, 0.0
+    # Compute DI and DX series from smoothed values
+    k = len(atr_series)
+    dx_values = np.empty(k)
+    last_plus_di = 0.0
+    last_minus_di = 0.0
 
-    plus_di = 100 * smooth_plus / atr
-    minus_di = 100 * smooth_minus / atr
+    for i in range(k):
+        atr_val = atr_series[i]
+        if atr_val <= 0:
+            dx_values[i] = 0.0
+            continue
+        pdi = 100.0 * plus_series[i] / atr_val
+        mdi = 100.0 * minus_series[i] / atr_val
+        di_sum = pdi + mdi
+        dx_values[i] = 100.0 * abs(pdi - mdi) / di_sum if di_sum > 0 else 0.0
+        last_plus_di = pdi
+        last_minus_di = mdi
 
-    di_sum = plus_di + minus_di
-    dx = 100 * abs(plus_di - minus_di) / di_sum if di_sum > 0 else 0.0
+    # ADX = Wilder-smooth of DX series
+    if len(dx_values) >= period:
+        adx = _wilder_smooth_scalar(dx_values, period)
+    else:
+        adx = float(dx_values[-1]) if len(dx_values) > 0 else 0.0
 
-    # ADX is the smoothed DX — approximate by using last value
-    # (full ADX requires running smoothing over all DX values;
-    # for classification purposes single DX is sufficient)
-    return float(dx), float(plus_di), float(minus_di)
+    return float(adx), float(last_plus_di), float(last_minus_di)
 
 
-def _wilder_smooth(data: np.ndarray, period: int) -> float:
-    """Wilder smoothing — return the last smoothed value."""
+def _wilder_smooth_series(data: np.ndarray, period: int) -> np.ndarray:
+    """Wilder smoothing — return the full smoothed series (from period onward)."""
+    if len(data) < period:
+        return data.copy()
+
+    result = np.empty(len(data) - period + 1)
+    # Seed with SMA of first ``period`` values
+    val = data[:period].sum()
+    result[0] = val
+    for i in range(period, len(data)):
+        val = val - val / period + data[i]
+        result[i - period + 1] = val
+    return result
+
+
+def _wilder_smooth_scalar(data: np.ndarray, period: int) -> float:
+    """Wilder smoothing — return only the last smoothed value."""
     if len(data) < period:
         return float(data.mean()) if len(data) > 0 else 0.0
 
-    # Seed with SMA
-    val = data[:period].mean()
+    val = data[:period].sum()
     for i in range(period, len(data)):
         val = val - val / period + data[i]
-    return float(val / period) if period > 0 else 0.0
+    return float(val / period)
 
 
 def _compute_efficiency_ratio(

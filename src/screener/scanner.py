@@ -201,8 +201,15 @@ class MiroScreener:
             ):
                 signal.vision_score = await self._get_vision_score(signal, datasets[signal.symbol])
 
+                if signal.vision_score is None:
+                    # Vision API failed — fail closed (skip signal)
+                    log.warning("vision_score_failed_skip",
+                                symbol=signal.symbol,
+                                msg="Vision API returned None — skipping signal (fail-closed)")
+                    continue
+
                 # Vision filter: skip if below min score
-                if signal.vision_score is not None and signal.vision_score < self.config.vision_min_score:
+                if signal.vision_score < self.config.vision_min_score:
                     log.info("signal_below_vision_threshold",
                              symbol=signal.symbol, vision_score=signal.vision_score,
                              min_score=self.config.vision_min_score)
