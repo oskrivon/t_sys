@@ -2,6 +2,56 @@
 
 ## Лог
 
+### 2026-05-15 — H1 Scalper Test: D1 levels + H1 entry = dead end
+
+**Гипотеза:** D1 уровни качественные → H1 вход даст больше трейдов при сохранении quality.
+
+**Бэктест:** 12 символов, 8 месяцев, walk-forward. D1 levels + breakout/retest/закол.
+
+| Config | Trades | t/mo | WR | PF | Sharpe | Annual | Exp/trade |
+|---|---|---|---|---|---|---|---|
+| **D1+4H raw** | 780 | 2.8 | 26.4% | 0.98 | -0.28 | **-2.3%** | -0.016% |
+| **D1+1H raw** | 1359 | 15.2 | 25.5% | 0.81 | -0.87 | **-19.2%** | -0.152% |
+| D1+1H + ML_d1 thr=0.25 | 1359 | 15.2 | 25.5% | 0.81 | -0.87 | -19.2% | -0.152% |
+| D1+1H + ML_d1 thr=0.50 | 1359 | 15.2 | 25.5% | 0.81 | -0.87 | -19.2% | -0.152% |
+| D1+1H + ML_h1scalp thr=0.25 | 1359 | 15.2 | 25.5% | 0.81 | -0.87 | -19.2% | -0.152% |
+| D1+1H + ML_h1scalp thr=0.50 | 1359 | 15.2 | 25.5% | 0.81 | -0.87 | -19.2% | -0.152% |
+
+**ML не фильтрует:** обе модели (d1, h1_scalp) дают P(win)>0.5 для всех трейдов. Причина:
+`level_age` = entry_idx - d1_level.last_idx смешивает индексы разных TF → аномальные фичи.
+
+**Почему H1 хуже:**
+- 5.4x больше трейдов, но каждый хуже (exp -0.152% vs -0.016%)
+- На H1 цена чаще касается D1 уровня шумом (wick), создавая ложные ретесты
+- На 4H шум усредняется — остаются настоящие ретесты
+- Даже с идеальным ML нужно отфильтровать 66%+ трейдов и поднять WR на +10pp → нереалистично
+
+**Вердикт:** H1 scalp с D1 levels — dead end. Vision тест не проводился ($6-8 не оправданы).
+4H остаётся единственным рабочим entry TF для Miro.
+
+**Скрипт:** `scripts/tmp/miro_h1_d1_backtest.py`
+
+### 2026-05-15 — Weekend Live + Funding Double-Entry Fix
+
+**Funding double-entry баг найден и исправлен:**
+CHIP и LAB позиции на Bybit зависли 3+ дней из-за race condition: PostOnly limit fill
+мгновенно на thin book, Bybit API лагает → executor не видит fill → шлёт market fallback
+→ двойной вход, exit закрывает только половину. Зависшие позиции закрыты: CHIP -$0.95,
+LAB +$5.55, net +$4.59. Фикс: проверка status=="closed" + fetch_positions перед market fallback.
+
+**Funding фильтры после ужесточения (12-15 мая):**
+Bybit: 45 scheduled → 7 precomputed (15.6%) → 2 signal → 0 executed.
+Binance: 23 thin_book reject, 18 precomputed → 1 signal → 1 executed (SIREN +48.5bps).
+`min_book_depth_mult: 5` слишком жёсткий — режет 78% кандидатов.
+
+**Weekend стратегия запущена в live:**
+- Обе биржи: Bybit + Binance
+- Dynamic notional (full balance - 5% reserve), leverage 3x
+- SL 2% conditional order на бирже + backup cron poll каждые 4ч
+- Monte Carlo validated: 3x даёт median $251 за 2.6y (start $66), P95 DD 22%, ruin 0%
+- Kelly: half-Kelly=14%, рискуем ~5%/trade → ниже half-Kelly = conservative
+- Cron: Пт 21:05 UTC (сигнал+открытие), Сб/Вс 4ч (SL check), Вс 23:05 (settle)
+
 ### 2026-05-14 -- Weekend Strategy: полный re-run на 8.6 годах
 
 Расширен BTC 4h датасет до 2017-08 (было с 2021-06). Скачаны 9000 свечей через Binance API,
