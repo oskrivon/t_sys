@@ -173,6 +173,7 @@ async def run_friday_signal(
                     notional=config.notional_per_exchange,
                     leverage=config.leverage,
                     sl_price=sl_price,
+                    margin_reserve_pct=config.margin_reserve_pct,
                 )
                 if fill:
                     fills.append(fill)

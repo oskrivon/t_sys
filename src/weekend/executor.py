@@ -82,6 +82,7 @@ def open_position(
     notional: float,
     leverage: int,
     sl_price: float,
+    margin_reserve_pct: float = 0.05,
 ) -> Optional[FillResult]:
     """Open BTC position on one exchange with SL order.
 
@@ -89,9 +90,10 @@ def open_position(
         exchange_id: "bybit" or "binance"
         symbol: e.g. "BTC/USDT:USDT"
         direction: "long" or "short"
-        notional: USD notional per exchange (margin, not position size)
+        notional: USD margin per exchange. 0 = use full available balance.
         leverage: leverage multiplier
         sl_price: stop-loss trigger price
+        margin_reserve_pct: keep this fraction of balance as buffer (default 5%)
 
     Returns:
         FillResult on success, None on failure.
@@ -102,6 +104,15 @@ def open_position(
         sl_side = "sell" if direction == "long" else "buy"
 
         _set_leverage(exchange, symbol, leverage)
+
+        # Dynamic notional: use full balance if notional=0
+        if notional <= 0:
+            bal = exchange.fetch_balance()
+            free = float(bal.get("USDT", {}).get("free", 0))
+            notional = free * (1 - margin_reserve_pct)
+            logger.info("weekend_dynamic_notional",
+                        exchange=exchange_id, free=free, notional=notional)
+
         qty, price = _compute_qty(exchange, symbol, notional, leverage)
 
         logger.info("weekend_opening", exchange=exchange_id, symbol=symbol,

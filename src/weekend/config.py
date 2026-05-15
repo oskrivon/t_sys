@@ -38,8 +38,9 @@ class WeekendConfig(BaseModel):
 
     # Live execution
     exchanges: list[str] = ["bybit", "binance"]
-    notional_per_exchange: float = 50.0  # USD margin per exchange
-    leverage: int = 5
+    notional_per_exchange: float = 0.0  # 0 = use full available balance
+    leverage: int = 3
+    margin_reserve_pct: float = 0.05  # keep 5% as buffer for fees/funding
 
     @field_validator("majority_threshold")
     @classmethod
