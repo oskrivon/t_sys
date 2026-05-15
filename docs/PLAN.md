@@ -79,12 +79,13 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 Архитектура построена: Strategy ABC + PortfolioManager + ExecutionManager.
 Подтверждённые стратегии (после validation pipeline 2026-05-12):
 
-| Стратегия | Статус | Sharpe (5y) | Scorecard | Действие |
-|---|---|---|---|---|
-| **Weekend VOTE(BABA+NQ+XLK)** | **CONFIRMED** | **1.84** | **6/7 (H2: 7/7)** | **Paper trade** |
-| Volume Ranking L/S | На паузе | 0.63 | 5/7 | Пересмотр через 6 мес |
-| Miro + ML + Vision>=8 | На паузе | -0.15 | 1/7 | Опционально: Vision>=8 subset |
-| Funding capture | Live (микро) | — | не применимо | Масштабирование на Binance |
+| Стратегия | Статус | Annual | Действие |
+|---|---|---|---|
+| **Weekend Ensemble** | **LIVE** (Bybit+Binance) | **21.4%** (1x) / **64%** (3x) | Мониторинг, scale через 3 мес |
+| Funding capture | Live (обе биржи) | TBD | Ослабить depth фильтр, fix exit slippage |
+| Calendar FOMC+Expiry | Confirmed, не имплементирован | ~14% | Следующий приоритет |
+| Miro + ML + Vision>=8 | На паузе | +7.3% OOS | H1 scalp dead end (tested 2026-05-15) |
+| Volume Ranking L/S | На паузе | +14.2% | Пересмотр через 6 мес |
 
 - [ ] Paper trading validation: 4 недели все 3 стратегии параллельно
 - [ ] Vision интеграция в live screener (score>=8 → trade, <5 → skip)
@@ -102,35 +103,15 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
       ✅ Engine Redis integration (commands, events, status KV)
       ✅ Strategy config from YAML (config/strategies.yml)
       ✅ Docker Compose (6 сервисов)
-- [ ] Weekend Ensemble Strategy:
-      **VOTE(BABA fri + NASDAQ fri + Tech_sector week) → BTC weekend**
-      Sharpe 2.82, WR 64%, avg +1.0%/trade, MaxDD -8.6%, profitable 6/6 years.
-      91 трейдов за 5 лет (~18/год, каждый ~3й weekend).
-      CONSISTENT half-split, recent (2024+) = +1.01%. Edge не decay'ится.
+- [x] Weekend Ensemble Strategy:
+      **VOTE(KWEB+EWJ+XLK+XLE+USDJPY) → BTC weekend**
+      8.6y OOS: Sharpe 2.82, WR 61%, 21.4% annual, profitable 9/9 years.
       
-      **Риски:**
-      - Overfitting: Sharpe 2.82 завышен — 64 комбинации протестированы, best-of-N bias.
-        Реалистичная оценка: Sharpe 0.8-1.2, avg +0.4-0.6%/trade, ~8-12%/год.
-      - Single-predictor decay: NASDAQ week slope -0.14%/yr (ensemble может замедлить, не устранить).
-      - Weekend effect — известная тема, partially priced in.
-      - Forward test 3 мес обязателен перед scale up.
-      - Мониторить: 3 мес flat/negative → пересмотр.
-      
-      **Параметры:**
-        - Signal: VOTE из 3 предикторов (BABA fri return, QQQ fri return, XLK week return)
-        - Торгуем только при консенсусе 2/3 или 3/3
-        - Entry: BTC Fri 21:00 UTC, direction = majority vote
-        - Exit: Sun 23:00 UTC
-        - SL: 2%
-        - Опционально: ETH, SOL параллельно (диверсификация)
-      
-      Фаза 1 (ближайшая пятница): paper trade + Telegram alert
-        - [ ] Скрипт: fetch QQQ/BABA/XLK, compute signals, send Telegram
-        - [ ] Cron: запуск пятница 21:05 UTC
-        - [ ] Ручное открытие позиции по alert
-        - [ ] Закрытие вс 23:00 UTC
-      Фаза 2 (4-8 нед paper): live на $500-1k без плеча
-      Фаза 3: scale + leverage 2-3x если live Sharpe >1.0
+      Фаза 1: ✅ Paper trading + Telegram (cron 21:05 Fri, settle Sun 23:05)
+      Фаза 2: ✅ **LIVE** (2026-05-15): Bybit + Binance, dynamic notional (full balance),
+        3x leverage, SL 2% conditional на бирже, funding capture paused на выходные.
+        Monte Carlo: median $251 за 2.6y (start $66), P95 DD 22%, ruin 0%.
+      Фаза 3: scale up при positive results через 3 мес live
 - [ ] Weekend Strategy: интеграция с новой инфраструктурой (quant audit 2026-05-13)
 
       **Контекст:** Weekend strategy живёт в изоляции — собственный SQLite, ручной ccxt,
@@ -155,11 +136,9 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
             actual_vol=4% → $75 (halved)
       - [ ] Записать actual_vol и adjusted_size в DB для трекинга
 
-      **Проблема 3: SL check раз в 4 часа — gap risk**
-      Между проверками BTC может пробить SL и уехать на -5%.
-      - [ ] При live execution: ставить conditional stop-loss ордер на бирже
-            (как в Miro execution — `_place_conditional_order()` с retry)
-      - [ ] Для paper trading: уменьшить интервал cron до 1 часа (`0 * * * 6,0`)
+      **Проблема 3: SL check раз в 4 часа — gap risk** — ✅ SOLVED
+      - [x] Live: conditional stop-loss ордер на бирже (Bybit + Binance)
+      - [x] Backup cron poll каждые 4ч + detection exchange-triggered SL
       - [ ] В будущем: WS price stream + instant SL trigger (как funding capture)
 
       **Проблема 4: Backtest без cost model**
