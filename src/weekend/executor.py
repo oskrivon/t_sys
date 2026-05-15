@@ -52,7 +52,7 @@ def _set_leverage(exchange, symbol: str, leverage: int) -> None:
                            symbol=symbol, error=str(e))
 
 
-def _compute_qty(exchange, symbol: str, notional: float, leverage: int) -> float:
+def _compute_qty(exchange, symbol: str, notional: float, leverage: int) -> tuple[float, float]:
     """Compute order qty from notional and current price."""
     ticker = exchange.fetch_ticker(symbol)
     price = ticker["last"]
@@ -68,6 +68,10 @@ def _compute_qty(exchange, symbol: str, notional: float, leverage: int) -> float
         step = float(market.get("precision", {}).get("amount", 0.001))
         qty = round(raw_qty / step) * step if step > 0 else raw_qty
         qty = round(qty, 8)
+    # Ensure minimum order size
+    min_qty = float(market.get("limits", {}).get("amount", {}).get("min", 0))
+    if min_qty and qty < min_qty:
+        qty = min_qty
     return qty, price
 
 
