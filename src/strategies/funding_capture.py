@@ -381,6 +381,25 @@ class FundingCaptureStrategy(Strategy):
         if time_to_funding_s > 600:
             self._traded_this_round.discard(symbol_raw)
 
+    @staticmethod
+    def _is_weekend_window() -> bool:
+        """Check if we're in weekend strategy window (Fri 21:00 - Sun 23:00 UTC).
+
+        During this window, funding capture should not trade to avoid
+        margin conflicts with the weekend BTC position.
+        """
+        now = datetime.now(timezone.utc)
+        wd = now.weekday()  # 0=Mon ... 4=Fri, 5=Sat, 6=Sun
+        h = now.hour
+        # Friday 21:00+ or Saturday all day or Sunday before 23:00
+        if wd == 4 and h >= 21:
+            return True
+        if wd == 5:
+            return True
+        if wd == 6 and h < 23:
+            return True
+        return False
+
     async def _schedule_entry(self, opp: FundingOpportunity, secs_until: float) -> None:
         """Wait, pre-compute, then fire order at T-2s.
 
@@ -389,6 +408,12 @@ class FundingCaptureStrategy(Strategy):
           T-2s: fire create_order (fast, ~200ms)
           T-0: settlement — we're already in position
         """
+        # Weekend guard: don't trade during weekend strategy window
+        if self._is_weekend_window():
+            logger.info("funding_entry_skipped_weekend", symbol=opp.symbol_raw)
+            self._scheduled.pop(opp.symbol_raw, None)
+            return
+
         # Phase 1: wait until pre-compute window
         wait_precompute = secs_until - self._entry_secs_before
         if wait_precompute > 0:
