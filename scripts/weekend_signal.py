@@ -6,18 +6,20 @@ Signal: 3/5 majority vote -> LONG/SHORT BTC.
 Entry: Friday 21:00 UTC. Exit: Sunday 23:00 UTC. SL: 2%.
 
 Usage:
-    python scripts/weekend_signal.py friday              # compute & alert
-    python scripts/weekend_signal.py friday --dry-run    # use last Friday
+    python scripts/weekend_signal.py friday              # paper: compute & alert
+    python scripts/weekend_signal.py friday --live       # LIVE: open BTC on Bybit+Binance
+    python scripts/weekend_signal.py friday --dry-run    # use last Friday's data
     python scripts/weekend_signal.py friday --historical 2026-04-18
-    python scripts/weekend_signal.py friday --no-telegram
-    python scripts/weekend_signal.py settle              # Sunday: close trade
-    python scripts/weekend_signal.py check-sl            # Sat/Sun: check stop-loss
-    python scripts/weekend_signal.py history              # show trade history
+    python scripts/weekend_signal.py settle              # paper: close trade
+    python scripts/weekend_signal.py settle --live       # LIVE: close positions
+    python scripts/weekend_signal.py check-sl            # paper: check stop-loss
+    python scripts/weekend_signal.py check-sl --live     # LIVE: verify exchange SL
+    python scripts/weekend_signal.py history             # show trade history
 
-Cron (server):
-    5,10,15 21 * * 5  weekend_signal.py friday
-    0 */4 * * 6,0     weekend_signal.py check-sl
-    5 23 * * 0        weekend_signal.py settle
+Cron (server, live):
+    5,10,15 21 * * 5  weekend_signal.py friday --live
+    0 */4 * * 6,0     weekend_signal.py check-sl --live
+    5 23 * * 0        weekend_signal.py settle --live
 """
 from __future__ import annotations
 
@@ -39,6 +41,7 @@ def cmd_friday(args):
         dry_run=args.dry_run,
         historical=args.historical,
         send_alert=not args.no_telegram,
+        live=args.live,
     ))
     if not result.direction:
         sys.exit(0)  # no trade is not an error
@@ -48,6 +51,7 @@ def cmd_settle(args):
     result = asyncio.run(run_sunday_settlement(
         DEFAULT_CONFIG,
         send_alert=not args.no_telegram,
+        live=args.live,
     ))
     if result:
         print(f"\nSettled: {result['pnl']:+.2f}%")
@@ -57,6 +61,7 @@ def cmd_check_sl(args):
     result = asyncio.run(run_sl_check(
         DEFAULT_CONFIG,
         send_alert=not args.no_telegram,
+        live=args.live,
     ))
     if result:
         print(f"\nSL HIT: {result['pnl']:+.2f}%")
@@ -107,16 +112,22 @@ def main():
                        help="Specific date YYYY-MM-DD")
     p_fri.add_argument("--no-telegram", action="store_true",
                        help="Don't send Telegram alert")
+    p_fri.add_argument("--live", action="store_true",
+                       help="Open real positions on Bybit + Binance")
     p_fri.set_defaults(func=cmd_friday)
 
     # settle
     p_set = sub.add_parser("settle", help="Sunday settlement")
     p_set.add_argument("--no-telegram", action="store_true")
+    p_set.add_argument("--live", action="store_true",
+                       help="Close real positions on exchanges")
     p_set.set_defaults(func=cmd_settle)
 
     # check-sl
     p_sl = sub.add_parser("check-sl", help="Check stop-loss")
     p_sl.add_argument("--no-telegram", action="store_true")
+    p_sl.add_argument("--live", action="store_true",
+                       help="Verify/close positions on exchanges")
     p_sl.set_defaults(func=cmd_check_sl)
 
     # history

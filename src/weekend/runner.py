@@ -81,14 +81,16 @@ async def run_friday_signal(
     dry_run: bool = False,
     historical: str | None = None,
     send_alert: bool = True,
+    live: bool = False,
 ) -> EnsembleResult:
-    """Friday flow: fetch data -> compute ensemble -> record -> alert.
+    """Friday flow: fetch data -> compute ensemble -> record -> alert -> [live: open positions].
 
     Args:
         config: Weekend strategy configuration.
         dry_run: Use last Friday's data (no day-of-week check).
         historical: Specific date "YYYY-MM-DD" to compute for.
         send_alert: Whether to send Telegram alert.
+        live: Open real positions on exchanges.
 
     Returns:
         EnsembleResult with signal details.
@@ -100,7 +102,7 @@ async def run_friday_signal(
     if not dry_run and not historical and target.weekday() != config.entry_weekday:
         logger.warning("not_friday", weekday=target.weekday())
 
-    logger.info("friday_signal_start", date=signal_date, dry_run=dry_run)
+    logger.info("friday_signal_start", date=signal_date, dry_run=dry_run, live=live)
 
     import pandas as pd
     target_ts = pd.Timestamp(target)
@@ -158,8 +160,42 @@ async def run_friday_signal(
         finally:
             conn.close()
 
+        # Live execution: open positions on exchanges
+        if live and btc_price is not None and sl_price is not None:
+            from src.weekend.executor import open_position
+
+            fills = []
+            for exch in config.exchanges:
+                fill = open_position(
+                    exchange_id=exch,
+                    symbol=config.target_symbol,
+                    direction=ensemble.direction,
+                    notional=config.notional_per_exchange,
+                    leverage=config.leverage,
+                    sl_price=sl_price,
+                )
+                if fill:
+                    fills.append(fill)
+
+            if fills:
+                live_lines = ["\n** LIVE POSITIONS OPENED **"]
+                for f in fills:
+                    live_lines.append(
+                        f"  {f.exchange}: {f.side} {f.qty} @ ${f.avg_price:,.1f}"
+                        f"  SL order: {f.sl_order_id or 'FAILED'}"
+                    )
+                live_msg = "\n".join(live_lines)
+                logger.info("weekend_live_opened",
+                            exchanges=[f.exchange for f in fills],
+                            total_notional=sum(f.qty * f.avg_price for f in fills))
+            else:
+                live_msg = "\n** LIVE: ALL EXCHANGES FAILED TO OPEN **"
+                logger.error("weekend_live_all_failed")
+
     # Format and send alert
     message = format_signal_message(ensemble, btc_price, sl_price, config)
+    if live and ensemble.direction:
+        message += live_msg
     print(message)
 
     if send_alert:
@@ -173,14 +209,36 @@ async def run_friday_signal(
 async def run_sunday_settlement(
     config: WeekendConfig,
     send_alert: bool = True,
+    live: bool = False,
 ) -> dict | None:
-    """Sunday flow: close open trade, compute P&L, alert."""
+    """Sunday flow: close open trade, compute P&L, alert. [live: close exchange positions]."""
     conn = init_db(config.db_path)
     try:
         trade = get_open_trade(conn)
         if not trade:
             logger.info("no_open_trade")
             return None
+
+        # Live: close positions on exchanges first
+        live_msg = ""
+        if live:
+            from src.weekend.executor import close_position
+
+            fills = []
+            for exch in config.exchanges:
+                fill = close_position(exch, config.target_symbol, trade["direction"])
+                if fill:
+                    fills.append(fill)
+
+            if fills:
+                live_lines = ["\n** LIVE POSITIONS CLOSED **"]
+                for f in fills:
+                    live_lines.append(
+                        f"  {f.exchange}: {f.side} {f.qty} @ ${f.avg_price:,.1f}"
+                    )
+                live_msg = "\n".join(live_lines)
+            else:
+                live_msg = "\n** LIVE: no positions found on exchanges **"
 
         btc_price = _fetch_btc_price(config.target_symbol)
         if btc_price is None:
@@ -202,6 +260,8 @@ async def run_sunday_settlement(
             trade["signal_date"], trade["direction"],
             trade["entry_price"], btc_price, pnl, False, stats,
         )
+        if live:
+            message += live_msg
         print(message)
 
         if send_alert:
@@ -217,8 +277,13 @@ async def run_sunday_settlement(
 async def run_sl_check(
     config: WeekendConfig,
     send_alert: bool = True,
+    live: bool = False,
 ) -> dict | None:
-    """Check if SL hit on open trade. Close early if so."""
+    """Check if SL hit on open trade. Close early if so.
+
+    In live mode, exchange SL orders handle the stop — this is a backup check.
+    If SL triggered on exchange, positions are already closed; we just update DB.
+    """
     conn = init_db(config.db_path)
     try:
         trade = get_open_trade(conn)
@@ -233,7 +298,47 @@ async def run_sl_check(
         if btc_price is None:
             return None
 
+        # In live mode, also verify exchange positions
+        if live:
+            from src.weekend.executor import check_position, close_position
+
+            any_open = False
+            for exch in config.exchanges:
+                pos = check_position(exch, config.target_symbol)
+                if pos.get("qty", 0) > 0:
+                    any_open = True
+                    logger.info("sl_check_live_position",
+                                exchange=exch, qty=pos["qty"],
+                                upnl=pos.get("upnl"))
+
+            # If no positions on exchanges but DB says open → SL triggered on exchange
+            if not any_open:
+                logger.warning("sl_triggered_on_exchange",
+                               date=trade["signal_date"])
+                pnl = compute_pnl(trade["entry_price"], btc_price, trade["direction"])
+                mark_exit(conn, trade["signal_date"], btc_price, pnl, sl_hit=True)
+                stats = get_stats(conn)
+
+                message = format_settlement_message(
+                    trade["signal_date"], trade["direction"],
+                    trade["entry_price"], btc_price, pnl, True, stats,
+                )
+                message += "\n** SL triggered on exchange (positions already closed) **"
+                print(message)
+
+                if send_alert:
+                    tg = _telegram_config()
+                    if tg:
+                        await send_telegram(message, tg[0], tg[1])
+
+                return {"signal_date": trade["signal_date"], "pnl": pnl, "sl_hit": True}
+
         if is_sl_hit(btc_price, trade["sl_price"], trade["direction"]):
+            # Live: close remaining positions (backup, exchange SL should have handled it)
+            if live:
+                for exch in config.exchanges:
+                    close_position(exch, config.target_symbol, trade["direction"])
+
             pnl = compute_pnl(trade["entry_price"], btc_price, trade["direction"])
             mark_exit(conn, trade["signal_date"], btc_price, pnl, sl_hit=True)
             stats = get_stats(conn)

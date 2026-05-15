@@ -36,6 +36,11 @@ class WeekendConfig(BaseModel):
     yfinance_retry_attempts: int = 3
     yfinance_retry_delay_seconds: float = 5.0
 
+    # Live execution
+    exchanges: list[str] = ["bybit", "binance"]
+    notional_per_exchange: float = 50.0  # USD margin per exchange
+    leverage: int = 5
+
     @field_validator("majority_threshold")
     @classmethod
     def threshold_valid(cls, v: int, info) -> int:
