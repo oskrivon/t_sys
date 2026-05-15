@@ -406,6 +406,8 @@ class ExecutionManager:
             try:
                 status = await client.fetch_order(order_id, symbol)
                 filled_qty = float(status.get("filled", 0))
+                if status.get("status") == "closed":
+                    filled_qty = qty  # fully filled despite cancel
                 break
             except Exception:
                 if fetch_attempt < 2:
@@ -418,6 +420,22 @@ class ExecutionManager:
                                  symbol=symbol, order_id=order_id,
                                  msg="Assuming full fill to prevent double-entry")
                     filled_qty = qty
+
+        # Double-check via position to prevent double-entry (Bybit API can lag)
+        if filled_qty == 0:
+            try:
+                await asyncio.sleep(0.5)
+                positions = await client.fetch_positions([symbol])
+                for pos in positions:
+                    pos_qty = abs(float(pos.get("contracts", 0)))
+                    if pos_qty >= qty * 0.95:
+                        logger.warning("limit_entry_position_already_open",
+                                       symbol=symbol, pos_qty=pos_qty,
+                                       msg="Limit fill detected via position check")
+                        filled_qty = qty
+                        break
+            except Exception:
+                logger.warning("limit_entry_position_check_failed", symbol=symbol)
 
         remaining = qty - filled_qty
 
