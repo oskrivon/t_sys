@@ -42,7 +42,9 @@ jobs:
 
       - id: filter
         run: |
-          CHANGED=$(git diff --name-only HEAD~1 HEAD)
+          # Compare against the PREVIOUS deploy, not just last commit.
+          # For multi-commit pushes, HEAD~1 misses earlier commits.
+          CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
           echo "Changed files:"
           echo "$CHANGED"
 
