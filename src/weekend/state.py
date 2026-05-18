@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS weekend_trades (
     sl_price REAL,
     sl_hit INTEGER DEFAULT 0,
     pnl_pct REAL,
+    reversal_price REAL,
+    reversal_time TEXT,
     vote_sum INTEGER NOT NULL,
     total_votes INTEGER NOT NULL,
     predictor_details TEXT NOT NULL,
@@ -38,6 +40,15 @@ def init_db(db_path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute(SCHEMA)
+    # Migrate: add reversal columns if missing (for existing DBs)
+    try:
+        conn.execute("ALTER TABLE weekend_trades ADD COLUMN reversal_price REAL")
+    except sqlite3.OperationalError:
+        pass  # column already exists
+    try:
+        conn.execute("ALTER TABLE weekend_trades ADD COLUMN reversal_time TEXT")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     return conn
 
@@ -81,6 +92,24 @@ def mark_entry(
            SET status='open', entry_price=?, sl_price=?, entry_time=?
            WHERE signal_date=? AND status='pending'""",
         (entry_price, sl_price, now, signal_date),
+    )
+    conn.commit()
+
+
+def mark_reversal(
+    conn: sqlite3.Connection,
+    signal_date: str,
+    reversal_price: float,
+    new_direction: str,
+    new_sl_price: float,
+) -> None:
+    """Record mid-weekend reversal: update direction, set new SL, store reversal price."""
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """UPDATE weekend_trades
+           SET direction=?, sl_price=?, reversal_price=?, reversal_time=?
+           WHERE signal_date=? AND status='open'""",
+        (new_direction, new_sl_price, reversal_price, now, signal_date),
     )
     conn.commit()
 

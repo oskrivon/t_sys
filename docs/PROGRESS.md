@@ -2,6 +2,36 @@
 
 ## Лог
 
+### 2026-05-18 — Weekend review + два бага в funding capture
+
+**Weekend trade #3:** LONG BTC $79,064 → $77,887 = **-1.49%**.
+SL 2% не задет (мин $77,973 vs SL $77,483). Кумулятив 3 трейда: WR 33%, total -2.5%.
+Обе биржи открылись корректно в 21:05, settle Вс 23:05.
+
+**Баг 1 — weekend cron retry открывал дубли:**
+Cron стреляет 3 раза (21:05/10/15) для надёжности. Retry не проверял наличие
+открытой позиции → пытался открыть поверх → `Margin is insufficient` → ложный
+алерт "ALL FAILED" в Telegram. Фикс: проверка trade status в DB перед open_position.
+
+**Баг 2 — funding threshold на 8h-equiv вместо raw rate:**
+`rate_8h_equiv = raw_rate * (8 / interval_h)` пропускал 1h монеты с raw 5 bps
+(8h-equiv 40 bps > порог 25 bps). Per-trade costs (commission + slippage) ~20 bps
+не масштабируются с частотой settlement → 5 bps raw = гарантированный убыток.
+Данные May 9-18 Binance: 16 из 23 трейдов sub-15bps raw, все net negative.
+
+| Порог (raw) | Трейдов | NET |
+|---|---|---|
+| >= 0 bps | 23 | -$0.095 |
+| >= 15 bps | 7 | +$0.020 |
+| >= 25 bps | 4 | +$0.192 |
+
+Фикс: threshold сравнивается с raw rate per settlement.
+
+**Funding Binance итого May 9-18 (excl BTC weekend):**
+Funding +$1.25, slippage -$0.77, commissions -$0.78 = **NET -$0.30**.
+Maker exit не работает на тонких монетах (0/4 limit fill, все market fallback).
+После фикса ожидаем NET positive — только трейды с raw >= 25 bps.
+
 ### 2026-05-15 — H1 Scalper Test: D1 levels + H1 entry = dead end
 
 **Гипотеза:** D1 уровни качественные → H1 вход даст больше трейдов при сохранении quality.

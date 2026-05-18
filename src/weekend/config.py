@@ -42,6 +42,11 @@ class WeekendConfig(BaseModel):
     leverage: int = 3
     margin_reserve_pct: float = 0.05  # keep 5% as buffer for fees/funding
 
+    # Mid-weekend reversal: if losing > threshold at checkpoint, flip direction
+    # OOS validated: +24h/0.3% -> Sharpe 3.35->4.41, WR 60%->74% on H2
+    reversal_checkpoint_h: int = 24       # hours after Friday entry (= Sat 21:00 UTC)
+    reversal_threshold_pct: float = 0.003 # 0.3% unrealized loss triggers reversal
+
     @field_validator("majority_threshold")
     @classmethod
     def threshold_valid(cls, v: int, info) -> int:

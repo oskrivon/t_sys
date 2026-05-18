@@ -14,11 +14,15 @@ Usage:
     python scripts/weekend_signal.py settle --live       # LIVE: close positions
     python scripts/weekend_signal.py check-sl            # paper: check stop-loss
     python scripts/weekend_signal.py check-sl --live     # LIVE: verify exchange SL
+    python scripts/weekend_signal.py check-reverse       # paper: reversal check
+    python scripts/weekend_signal.py check-reverse --live # LIVE: reverse if losing
     python scripts/weekend_signal.py history             # show trade history
 
 Cron (server, live):
     5,10,15 21 * * 5  weekend_signal.py friday --live
-    0 */4 * * 6,0     weekend_signal.py check-sl --live
+    0 */4 * * 6       weekend_signal.py check-sl --live
+    5 21 * * 6        weekend_signal.py check-reverse --live  # Sat 21:05 UTC
+    0 */4 * * 0       weekend_signal.py check-sl --live
     5 23 * * 0        weekend_signal.py settle --live
 """
 from __future__ import annotations
@@ -31,7 +35,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.weekend.config import DEFAULT_CONFIG
-from src.weekend.runner import run_friday_signal, run_sl_check, run_sunday_settlement
+from src.weekend.runner import (
+    run_friday_signal,
+    run_reversal_check,
+    run_sl_check,
+    run_sunday_settlement,
+)
 from src.weekend.state import get_history, get_stats, init_db
 
 
@@ -66,7 +75,20 @@ def cmd_check_sl(args):
     if result:
         print(f"\nSL HIT: {result['pnl']:+.2f}%")
     else:
-        print("OK — no SL hit")
+        print("OK -- no SL hit")
+
+
+def cmd_check_reverse(args):
+    result = asyncio.run(run_reversal_check(
+        DEFAULT_CONFIG,
+        send_alert=not args.no_telegram,
+        live=args.live,
+    ))
+    if result:
+        print(f"\nREVERSED: {result['old_direction']} -> {result['new_direction']} "
+              f"(was {result['unrealized_pct']:+.2f}%)")
+    else:
+        print("OK -- no reversal needed")
 
 
 def cmd_history(args):
@@ -129,6 +151,14 @@ def main():
     p_sl.add_argument("--live", action="store_true",
                        help="Verify/close positions on exchanges")
     p_sl.set_defaults(func=cmd_check_sl)
+
+    # check-reverse
+    p_rev = sub.add_parser("check-reverse",
+                           help="Saturday checkpoint: reverse if losing > threshold")
+    p_rev.add_argument("--no-telegram", action="store_true")
+    p_rev.add_argument("--live", action="store_true",
+                       help="Execute reversal on exchanges")
+    p_rev.set_defaults(func=cmd_check_reverse)
 
     # history
     p_hist = sub.add_parser("history", help="Show trade history")

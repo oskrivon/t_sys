@@ -29,6 +29,7 @@ from src.weekend.state import (
     init_db,
     mark_entry,
     mark_exit,
+    mark_reversal,
     record_signal,
 )
 
@@ -258,7 +259,18 @@ async def run_sunday_settlement(
             logger.error("settlement_no_price")
             return None
 
-        pnl = compute_pnl(trade["entry_price"], btc_price, trade["direction"])
+        # If reversed mid-weekend, compute combined P&L:
+        # leg1 (entry->reversal in original dir) + leg2 (reversal->exit in new dir)
+        if trade["reversal_price"] is not None:
+            # Original direction is now flipped in DB; recover original from reversal
+            orig_dir = "short" if trade["direction"] == "long" else "long"
+            leg1 = compute_pnl(trade["entry_price"], trade["reversal_price"], orig_dir)
+            leg2 = compute_pnl(trade["reversal_price"], btc_price, trade["direction"])
+            pnl = leg1 + leg2
+            logger.info("settlement_reversed_trade",
+                        leg1=f"{leg1:+.2f}%", leg2=f"{leg2:+.2f}%", total=f"{pnl:+.2f}%")
+        else:
+            pnl = compute_pnl(trade["entry_price"], btc_price, trade["direction"])
         mark_exit(conn, trade["signal_date"], btc_price, pnl, sl_hit=False)
         stats = get_stats(conn)
 
@@ -384,5 +396,146 @@ async def run_sl_check(
             sl=trade["sl_price"],
         )
         return None
+    finally:
+        conn.close()
+
+
+async def run_reversal_check(
+    config: WeekendConfig,
+    send_alert: bool = True,
+    live: bool = False,
+) -> dict | None:
+    """Saturday checkpoint: if losing > threshold, reverse the position.
+
+    Close original direction, open opposite. Update DB with new direction + SL.
+    OOS validated: +24h/0.3% -> Sharpe 3.35->4.41, WR 60%->74%.
+    """
+    conn = init_db(config.db_path)
+    try:
+        trade = get_open_trade(conn)
+        if not trade:
+            logger.info("reversal_no_open_trade")
+            return None
+
+        # Don't reverse twice
+        if trade["reversal_price"] is not None:
+            logger.info("reversal_already_done", date=trade["signal_date"])
+            return None
+
+        btc_price = _fetch_btc_price(config.target_symbol)
+        if btc_price is None:
+            return None
+
+        entry_price = trade["entry_price"]
+        direction = trade["direction"]
+
+        # Compute unrealized P&L
+        if direction == "long":
+            unrealized_pct = (btc_price - entry_price) / entry_price
+        else:
+            unrealized_pct = (entry_price - btc_price) / entry_price
+
+        logger.info(
+            "reversal_check",
+            date=trade["signal_date"],
+            direction=direction,
+            entry=entry_price,
+            price=btc_price,
+            unrealized_pct=f"{unrealized_pct:+.4f}",
+            threshold=f"-{config.reversal_threshold_pct:.4f}",
+        )
+
+        if unrealized_pct >= -config.reversal_threshold_pct:
+            logger.info("reversal_not_triggered",
+                        unrealized=f"{unrealized_pct*100:+.2f}%")
+            print(f"OK -- no reversal needed (unrealized {unrealized_pct*100:+.2f}%, "
+                  f"threshold -{config.reversal_threshold_pct*100:.1f}%)")
+            return None
+
+        # === REVERSE ===
+        new_direction = "short" if direction == "long" else "long"
+        new_sl_price = compute_sl_price(
+            btc_price, new_direction, config.stop_loss_pct,
+        )
+
+        logger.warning(
+            "reversal_triggered",
+            date=trade["signal_date"],
+            old_direction=direction,
+            new_direction=new_direction,
+            unrealized_pct=f"{unrealized_pct*100:+.2f}%",
+            reversal_price=btc_price,
+            new_sl=new_sl_price,
+        )
+
+        live_msg = ""
+        if live:
+            from src.weekend.executor import close_position, open_position
+
+            # 1. Close original positions
+            close_fills = []
+            for exch in config.exchanges:
+                fill = close_position(exch, config.target_symbol, direction)
+                if fill:
+                    close_fills.append(fill)
+
+            # 2. Open reversed positions
+            open_fills = []
+            for exch in config.exchanges:
+                fill = open_position(
+                    exchange_id=exch,
+                    symbol=config.target_symbol,
+                    direction=new_direction,
+                    notional=config.notional_per_exchange,
+                    leverage=config.leverage,
+                    sl_price=new_sl_price,
+                    margin_reserve_pct=config.margin_reserve_pct,
+                )
+                if fill:
+                    open_fills.append(fill)
+
+            live_lines = ["\n** LIVE REVERSAL EXECUTED **"]
+            for f in close_fills:
+                live_lines.append(f"  CLOSED {f.exchange}: {f.side} {f.qty} @ ${f.avg_price:,.1f}")
+            for f in open_fills:
+                live_lines.append(
+                    f"  OPENED {f.exchange}: {f.side} {f.qty} @ ${f.avg_price:,.1f}"
+                    f"  SL: {f.sl_order_id or 'FAILED'}"
+                )
+            if not open_fills:
+                live_lines.append("  WARNING: no reversed positions opened!")
+            live_msg = "\n".join(live_lines)
+
+        # Update DB
+        mark_reversal(conn, trade["signal_date"], btc_price, new_direction, new_sl_price)
+
+        message = (
+            f"========================================\n"
+            f"WEEKEND REVERSAL\n"
+            f"Date: {trade['signal_date']}\n"
+            f"========================================\n"
+            f"\n"
+            f"Original: {direction.upper()} @ ${entry_price:,.0f}\n"
+            f"Unrealized: {unrealized_pct*100:+.2f}%\n"
+            f"Reversed to: {new_direction.upper()} @ ${btc_price:,.0f}\n"
+            f"New SL ({config.stop_loss_pct*100:.0f}%): ${new_sl_price:,.0f}\n"
+            f"========================================\n"
+        )
+        if live:
+            message += live_msg
+        print(message)
+
+        if send_alert:
+            tg = _telegram_config()
+            if tg:
+                await send_telegram(message, tg[0], tg[1])
+
+        return {
+            "signal_date": trade["signal_date"],
+            "old_direction": direction,
+            "new_direction": new_direction,
+            "reversal_price": btc_price,
+            "unrealized_pct": unrealized_pct * 100,
+        }
     finally:
         conn.close()
