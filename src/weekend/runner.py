@@ -137,6 +137,7 @@ async def run_friday_signal(
     sl_price = None
 
     # Record to DB and compute SL
+    already_open = False
     if ensemble.direction:
         conn = init_db(config.db_path)
         try:
@@ -152,7 +153,15 @@ async def run_friday_signal(
                 ensemble.vote_sum, ensemble.total_votes, details,
             )
 
-            if btc_price is not None:
+            if row_id is None:
+                # Signal already recorded — check if positions already open
+                existing = get_trade_by_date(conn, signal_date)
+                if existing and existing["status"] in ("open", "closed", "sl_hit"):
+                    already_open = True
+                    logger.info("weekend_already_opened", date=signal_date,
+                                status=existing["status"])
+
+            if btc_price is not None and not already_open:
                 sl_price = compute_sl_price(
                     btc_price, ensemble.direction, config.stop_loss_pct,
                 )
@@ -161,7 +170,7 @@ async def run_friday_signal(
             conn.close()
 
         # Live execution: open positions on exchanges
-        if live and btc_price is not None and sl_price is not None:
+        if live and btc_price is not None and sl_price is not None and not already_open:
             from src.weekend.executor import open_position
 
             fills = []
@@ -196,7 +205,10 @@ async def run_friday_signal(
     # Format and send alert
     message = format_signal_message(ensemble, btc_price, sl_price, config)
     if live and ensemble.direction:
-        message += live_msg
+        if already_open:
+            message += "\n** RETRY: positions already open, skipping **"
+        else:
+            message += live_msg
     print(message)
 
     if send_alert:
