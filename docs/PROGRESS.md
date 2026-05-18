@@ -2,6 +2,51 @@
 
 ## Лог
 
+### 2026-05-19 — Squeeze + Funding Direction: multi-symbol edge found
+
+**Squeeze + momentum/RSI = dead end** (см. ниже). Direction signal = coin flip (WR 37%).
+
+**Squeeze + Funding extreme = работает.** Contrarian к crowded funding + volatility squeeze.
+Скачана полная funding history Binance для 19 символов (2019-2026, ~7k records/sym).
+
+Best multi-symbol config: **f>=10bps + flip 0.3%**
+
+| Split | N | WR | Sharpe | Cum |
+|---|---|---|---|---|
+| Full sample | 41 | 63.4% | 1.18 | +38.1% |
+| H2 OOS (Jun 2023+) | 34 | 64.7% | 1.11 | +33.1% |
+
+Flip добавляет Sharpe 0.78 -> 1.18 (+51%) на full sample.
+Yearly: profitable 2023 (Sharpe 2.66), 2024 (1.45), 2026 (5.71). Negative 2022, 2025.
+~8 trades/year на 18 символах. Высокое quality (avg +0.93%), низкая частота.
+
+Relaxed squeeze threshold (0.7 vs 0.6): +7 trades, OOS Sharpe ~same (1.10 vs 1.11).
+0.6 оптимален — строже = чище. ~8-10 trades/year = дополнение к portfolio, не standalone.
+
+**Скрипт:** `scripts/tmp/squeeze_funding_multi.py`
+
+### 2026-05-19 — Squeeze + Flip: dead end без quality direction signal
+
+**Гипотеза:** volatility squeeze предсказывает timing большого движения. Входим по
+momentum hint, flip если через N candles losing > X%. Протестировано на BTC 4h (2017-2026).
+
+**Результат:** dead end. Все конфиги отрицательные.
+
+| Вариант | N | WR | Sharpe | Cum |
+|---|---|---|---|---|
+| Squeeze + momentum (no flip) | 108 | 37.0% | -0.26 | -23.5% |
+| Best with flip (cc=6, 1.0%) | 106 | 40.6% | -0.06 | -5.7% |
+| Multi-symbol combined | 171 | 36.8% | -0.77 | -69.0% |
+
+Flip mechanism работает (убыток -23.5% -> -5.7%), но direction signal (RSI/momentum) = coin flip.
+Ablation OOS: без flip Sharpe -0.77, с flip +0.03 — flip реально помогает, но baseline слишком плох.
+
+**Почему weekend reversal работает а squeeze нет:** weekend имеет quality direction (5-predictor
+ensemble WR 60%), squeeze direction = random (WR 37%). Flip не может превратить random в profit.
+
+**Вывод:** squeeze + flip жизнеспособен ТОЛЬКО с quality direction signal (WR >= 55%).
+Следующий тест: squeeze + funding extreme direction.
+
 ### 2026-05-19 — CI/CD pipeline починен, авто-деплой восстановлен
 
 **Почему CI не деплоил:** две независимые проблемы.
