@@ -459,7 +459,11 @@ Scale funding capture to multiple exchanges — different liquidity pools, no cr
 - **MM Spread Exploitation** — когда ММ уходят перед settlement (spread 5-25bps vs нормальные 1-2bps), ставить limit orders в расширенный спред как temporary MM. Profit = spread - fees если обе стороны fill. Risk: one-sided fill. Нужно: real-time spread monitoring через WS, cancel logic после settlement. **Приоритет: LOW.** Требует orderbook WS инфры.
 - **Colocation HFT for funding bot front-run** — bot impact +0.14%/event при >50bps funding, 352 events/year. Colocation ~$35k/yr. Breakeven ~$71k notional/trade. **Приоритет: VERY LOW.** Требует ~$100k капитала для окупаемости.
 
-## Backlog — Прочее
+## Backlog — Squeeze + Funding Direction
+
+- **Squeeze + Funding Extreme + Flip** — volatility squeeze + contrarian funding direction. OOS Sharpe 1.11, WR 64.7%, 34 trades на H2 (Jun 2023+). ~8-10 trades/year на 18 символах. Niche: дополнение к portfolio, не standalone. Config: vol_contraction < 0.6, funding_24h >= 10bps, flip 0.3% at +4 candles. Scripts: `scripts/tmp/squeeze_funding_multi.py`. Funding data cached: `data/raw/funding/binance_*_full.parquet` (19 sym, 2019-2026). Next: формализовать в Strategy class, paper trading, интеграция в portfolio manager.
+
+## Backlog -- Прочее
 
 - **Pairs Trading / Stat Arb** — 14 OOS survivors из 177 пар. Top: BTC/LTC (Sharpe 0.90, WR 68%), DOT/FIL (0.70, 60%), FIL/LTC (0.52, 58%). Portfolio 5 pairs: Sharpe ~1.80, +24.8% annual @5x. Market neutral. Next: cointegration test, paper trading, live engine. Script: `scripts/research/backtest_pairs_trading.py`
 - **Range Trading (corridor bounce)** — ML+Vision OOS validated: score>=6 = 200t, WR 38.5%, PF 1.29. LONG score 6-7 = 45.6% WR. Комплементарен к Miro (bounce vs breakout). Next: paper trading для gate, R:R/cost sensitivity analysis. Scripts: `scripts/research/backtest_range_trading.py`, `scripts/research/range_vision_score.py`
