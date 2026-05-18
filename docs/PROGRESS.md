@@ -2,6 +2,19 @@
 
 ## Лог
 
+### 2026-05-19 — Opening Range Breakout: dead end на 4h BTC
+
+**Гипотеза:** range первых N часов сессии (Asian/London/NY/overnight), breakout = direction,
+flip при failed breakout (цена вернулась в range).
+
+**Результат:** dead end. Все baseline negative (Sharpe -0.41 до -0.99, WR 34-38%).
+Лучший: overnight + tight range + flip 0.3% = Sharpe 0.14, cum +22. Marginal, H2 OOS пустой.
+
+**Почему:** 4h candles слишком грубые для range breakout. BTC 24/7 = нет настоящего "opening".
+Direction после breakout = noise на crypto. Может работать на 15m/1h, но данных нет.
+
+**Скрипт:** `scripts/tmp/opening_range_flip.py`
+
 ### 2026-05-19 — TradFi Lag: flip не нужен, baseline работает
 
 **Гипотеза:** большое движение NQ (|day_ret| >= 2%), BTC не догнал → enter в direction NQ
