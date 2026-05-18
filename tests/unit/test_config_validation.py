@@ -36,7 +36,7 @@ class TestTradingConfigValidation:
         with pytest.raises(ValidationError):
             TradingConfig(max_position_size_pct=bad_pct)
 
-    @pytest.mark.parametrize("bad_pct", [0.5, 0.0, 100.1, -1.0])
+    @pytest.mark.parametrize("bad_pct", [0.4, 0.0, 50.1, -1.0])
     def test_invalid_max_daily_loss_pct(self, bad_pct):
         with pytest.raises(ValidationError):
             TradingConfig(max_daily_loss_pct=bad_pct)
