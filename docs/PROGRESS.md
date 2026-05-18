@@ -2,6 +2,34 @@
 
 ## Лог
 
+### 2026-05-18 — Weekend reversal + funding raw rate fix deployed
+
+**Mid-weekend reversal — OOS validated и задеплоен:**
+Анализ intra-weekend price paths на 4h BTC (2017-2026), 127 trades с 5-predictor ensemble.
+Если к субботе 21:00 UTC позиция в минусе > 0.3% — разворачиваемся.
+
+| | Baseline | +24h / 0.3% reversal |
+|---|---|---|
+| H2 OOS Sharpe | 3.35 | **4.41** (+32%) |
+| H2 OOS WR | 60.4% | **73.6%** |
+| H2 OOS DD | -4.2% | -3.9% |
+| H2 OOS Reversals | 0 | 11 / 53 trades (21%) |
+
+Все +24h варианты (0.3/0.5/0.7/1.0%) BETTER на OOS, ни один не WORSE.
+Checkpoint Sat 21:00 UTC устойчив: к этому моменту 48% окна прошло,
+recovery probability падает до ~40% (vs ~47% на Sat 05:00).
+
+**Реализация:** `check-reverse` команда, cron Sat 21:05 UTC.
+Логика: close original + open opposite с новым SL 2%.
+Settlement считает combined P&L (leg1 + leg2). Защита от двойного реверса.
+DB: `reversal_price`, `reversal_time` columns в `weekend_trades`.
+
+**Funding raw rate fix — задеплоен и подтверждён:**
+После ручного деплоя и рестарта engines `above_trade_threshold`:
+- Bybit: 4 -> **1** (только RONIN 199bps проходит, BIO 19bps и FIDA 18bps отсечены)
+- Binance: 7 -> **5** (ALICE 113bps, RONIN 166bps, FIDA 29bps остались)
+CI не подхватил автоматически — пришлось `git pull && docker compose up` вручную.
+
 ### 2026-05-18 — Weekend review + два бага в funding capture
 
 **Weekend trade #3:** LONG BTC $79,064 → $77,887 = **-1.49%**.
