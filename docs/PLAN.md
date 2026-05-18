@@ -459,6 +459,10 @@ Scale funding capture to multiple exchanges — different liquidity pools, no cr
 - **MM Spread Exploitation** — когда ММ уходят перед settlement (spread 5-25bps vs нормальные 1-2bps), ставить limit orders в расширенный спред как temporary MM. Profit = spread - fees если обе стороны fill. Risk: one-sided fill. Нужно: real-time spread monitoring через WS, cancel logic после settlement. **Приоритет: LOW.** Требует orderbook WS инфры.
 - **Colocation HFT for funding bot front-run** — bot impact +0.14%/event при >50bps funding, 352 events/year. Colocation ~$35k/yr. Breakeven ~$71k notional/trade. **Приоритет: VERY LOW.** Требует ~$100k капитала для окупаемости.
 
+## Backlog — TradFi Lag (NQ -> BTC catch-up)
+
+- **NQ Big Move -> BTC catch-up** — после |NQ day_ret| >= 2%, BTC догоняет за 8h post-NYSE close. OOS Sharpe 0.74, 23 trades/yr, +6.3% annual net. Простая реализация: cron после 21:00 UTC, проверить NQ day ret, если >= 2% → open BTC в direction NQ, close через 8h. Без flip, без sync фильтров (regime-dependent). Script: `scripts/tmp/tradfi_lag_flip.py`. Next: Strategy class, NQ data feed (yfinance daily), cron integration, paper trading.
+
 ## Backlog — Squeeze + Funding Direction
 
 - **Squeeze + Funding Extreme + Flip** — volatility squeeze + contrarian funding direction. OOS Sharpe 1.11, WR 64.7%, 34 trades на H2 (Jun 2023+). ~8-10 trades/year на 18 символах. Niche: дополнение к portfolio, не standalone. Config: vol_contraction < 0.6, funding_24h >= 10bps, flip 0.3% at +4 candles. Scripts: `scripts/tmp/squeeze_funding_multi.py`. Funding data cached: `data/raw/funding/binance_*_full.parquet` (19 sym, 2019-2026). Next: формализовать в Strategy class, paper trading, интеграция в portfolio manager.

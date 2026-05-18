@@ -2,6 +2,31 @@
 
 ## Лог
 
+### 2026-05-19 — TradFi Lag: flip не нужен, baseline работает
+
+**Гипотеза:** большое движение NQ (|day_ret| >= 2%), BTC не догнал → enter в direction NQ
+после NYSE close (21:00 UTC). Flip если через 4h BTC пошёл против.
+
+**Результат:** flip ухудшает стратегию. Baseline no_flip — лучший вариант.
+
+| Config | N | WR | Sharpe | H2 OOS Sharpe |
+|---|---|---|---|---|
+| |NQ|>=2.0% no_flip | 98 | 45.9% | **0.73** | **0.74** |
+| |NQ|>=2.0% flip=0.7% | 98 | 44.9% | 0.65 | 0.56 |
+| |NQ|>=2.0% flip=0.3% | 98 | 42.9% | 0.40 | 0.31 |
+
+**Почему flip вредит:** BTC catch-up растягивается на 8h. В +4h BTC часто ещё не догнал NQ —
+это не "wrong direction", а "late arrival". Flip прерывает catch-up процесс.
+
+Sync фильтры (low_sync, btc_quiet) показывают сильный regime shift:
+H1 (2021-2023) negative, H2 (2023-2026) WR 73-79%. Не robust для production.
+
+**Вывод:** `|NQ|>=2.0% no_flip` = простая рабочая стратегия. 23 trades/yr, +6.3% annual net,
+Sharpe 0.74 OOS. Один cron после NYSE close. Flip = dead end для этого паттерна.
+Flip работает только когда confirm window достаточен для determination (weekend 24h = ok, tradfi 4h = too early).
+
+**Скрипт:** `scripts/tmp/tradfi_lag_flip.py`
+
 ### 2026-05-19 — Squeeze + Funding Direction: multi-symbol edge found
 
 **Squeeze + momentum/RSI = dead end** (см. ниже). Direction signal = coin flip (WR 37%).
