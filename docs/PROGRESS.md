@@ -2,6 +2,21 @@
 
 ## Лог
 
+### 2026-05-19 — CI/CD pipeline починен, авто-деплой восстановлен
+
+**Почему CI не деплоил:** две независимые проблемы.
+
+1. **`git diff HEAD~1 HEAD` в multi-commit push** — видел только последний коммит.
+   Пуш из 3 коммитов, где #2 менял `src/strategies/` (engine), а #3 `src/weekend/` (scripts) —
+   CI видел только #3, engine restart не происходил. Фикс: `github.event.before..github.sha`.
+
+2. **Failing тест блокировал deploy job** — `test_invalid_max_daily_loss_pct[0.5]` падал,
+   потому что `Field(ge=0.5)` означает 0.5 = валидное значение. Deploy зависит от test
+   (`needs: [test, changes]`), поэтому **ни один пуш не деплоился**. Фикс: тест параметры
+   0.5 -> 0.4 (ниже min), 100.1 -> 50.1 (выше le=50.0).
+
+После фикса: CI green, deploy отрабатывает корректно.
+
 ### 2026-05-18 — Weekend reversal + funding raw rate fix deployed
 
 **Mid-weekend reversal — OOS validated и задеплоен:**
