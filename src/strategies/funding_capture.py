@@ -217,7 +217,7 @@ class FundingCaptureStrategy(Strategy):
                          total_pairs=len(tickers),
                          hot_pairs=len(hot_symbols),
                          above_trade_threshold=sum(1 for r in scan_results
-                                                    if r["rate_8h_bps"] >= self._threshold_bps),
+                                                    if r["rate_bps"] >= self._threshold_bps),
                          new_subs=len(new_symbols),
                          removed=len(removed))
 
@@ -276,7 +276,7 @@ class FundingCaptureStrategy(Strategy):
         # Group by settlement hour
         schedule: dict[str, list[str]] = {}
         for r in scan_results:
-            if r["rate_8h_bps"] < self._threshold_bps:
+            if r["rate_bps"] < self._threshold_bps:
                 continue
             nft = r.get("next_funding_ms", 0)
             if not nft:
@@ -355,13 +355,14 @@ class FundingCaptureStrategy(Strategy):
         now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
         time_to_funding_s = (next_funding_ms - now_ms) / 1000
 
-        # Normalize rate to 8h-equivalent for threshold comparison:
-        # 4h coin at 10bps = 20bps effective (settles 6x/day vs 3x)
-        rate_8h_equiv = abs(funding_rate) * (8 / interval_h)
+        # Use RAW per-settlement rate for threshold, not 8h-equivalent.
+        # Costs (commission + slippage) are per-trade, so a 1h coin at
+        # 5bps raw is unprofitable even though 8h-equiv = 40bps.
+        raw_rate = abs(funding_rate)
 
         # Only schedule if: rate above threshold, within 2min window,
         # not already scheduled AND not already traded this round
-        if (rate_8h_equiv >= self._threshold_rate
+        if (raw_rate >= self._threshold_rate
                 and 0 < time_to_funding_s < 120
                 and symbol_raw not in self._scheduled
                 and symbol_raw not in self._traded_this_round):
