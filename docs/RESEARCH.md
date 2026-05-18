@@ -2,7 +2,7 @@
 
 ## Активные исследования
 
-- **Weekend Effect: Cross-Asset -> BTC** — **CONFIRMED 8.6y OOS**. Sharpe 2.82, 21.4% annual (full capital), 163 trades, profitable every year. [Детали](WEEKEND_EFFECT_RESEARCH.md)
+- **Weekend Effect: Cross-Asset -> BTC** — **LIVE with mid-weekend reversal**. Baseline Sharpe 2.82, +reversal OOS Sharpe 4.41. 5-predictor ensemble, Sat 21:00 UTC flip if losing >0.3%. 7/7 scorecard PASS. [Детали](WEEKEND_EFFECT_RESEARCH.md)
 - **Calendar Events: FOMC + Q-Expiry** — **CONFIRMED OOS**. Pre-FOMC LONG (WR 70%, 8/yr) + Post-Q-expiry SHORT (WR 58%, 4/yr). Combined Sharpe_net 1.06, ~14% annual. Zero overlap с weekend signal.
 
 - **Funding Capture HF** — **ACTIVE**. Live trading engine на Bybit. [Детали](FUNDING_CAPTURE_RESEARCH.md)
@@ -14,6 +14,31 @@
 - [Настройка бирж](EXCHANGES_SETUP.md) — API ключи Binance/Bybit/OKX
 
 ## Решения
+
+### [Flip-стратегии: систематический тест 5 подходов] — 2026-05-19
+
+**Концепция:** вход по direction signal, confirm window, если wrong — flip position.
+Протестировано 5 вариантов, 3 рабочих:
+
+| Стратегия | Flip effect | OOS Sharpe | Trades/yr | Status |
+|---|---|---|---|---|
+| **Weekend reversal** | **+32% Sharpe** | **4.41** | ~20 | **Live (deployed)** |
+| Squeeze + momentum | Reduces loss | -0.06 | ~12 | Dead end — direction=random |
+| **Squeeze + funding** | Marginal | **1.11** | ~8 | **Backlog** |
+| **TradFi NQ lag** | **Hurts** (-15%) | **0.74** | ~23 | **Backlog** (no flip) |
+| Opening Range | Marginal (+0.04) | 0.14 | ~41 | Dead end — 4h too coarse |
+
+**Ключевые выводы:**
+1. Flip работает когда confirm window достаточен для determination (weekend 24h = ok)
+2. Flip вредит когда edge = delayed catch-up (TradFi lag: BTC ещё не догнал NQ, flip прерывает)
+3. Flip бесполезен если direction signal = noise (squeeze + momentum WR 37%)
+4. Quality direction signal (WR >= 55%) — необходимое условие для любой flip стратегии
+
+**Скрипты:** `scripts/tmp/weekend_reversal_wf.py`, `scripts/tmp/squeeze_funding_multi.py`,
+`scripts/tmp/tradfi_lag_flip.py`, `scripts/tmp/opening_range_flip.py`,
+`scripts/tmp/squeeze_flip_backtest.py`
+
+---
 
 ### [Weekend Ensemble: 8.6 лет, Sharpe 2.82, каждый год в плюсе] — 2026-05-14
 
