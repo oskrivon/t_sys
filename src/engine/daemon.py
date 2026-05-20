@@ -168,6 +168,7 @@ class TradingEngine:
             strategies=scheduled,
             event_bus=self.event_bus,
             exchange=self._make_adapter(),
+            state=self.state,
         )
 
         # 10. Subscribe to Redis commands

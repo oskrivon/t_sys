@@ -13,7 +13,8 @@ from typing import Optional
 import structlog
 
 from src.engine.event_bus import EventBus, Event, EventType
-from src.strategies.base import Strategy, StrategyType, StrategyConfig
+from src.engine.state import StateManager
+from src.strategies.base import Strategy, StrategyType, StrategyConfig, TradeSignal
 
 logger = structlog.get_logger()
 
@@ -26,10 +27,12 @@ class StrategyScheduler:
         strategies: dict[str, Strategy],
         event_bus: EventBus,
         exchange,
+        state: Optional[StateManager] = None,
     ) -> None:
         self._strategies = strategies
         self._event_bus = event_bus
         self._exchange = exchange
+        self._state = state
         self._running = False
         self._tasks: list[asyncio.Task] = []
 
@@ -110,14 +113,30 @@ class StrategyScheduler:
                 return
 
             if strategy.config.strategy_type == StrategyType.EVENT_DRIVEN:
-                for signal in results:
-                    await self._event_bus.publish(Event(
-                        type=EventType.SIGNAL_GENERATED,
-                        data=signal,
-                        source=sid,
-                    ))
-                logger.info("strategy_tick_signals",
-                             strategy=sid, count=len(results))
+                # Paper-only strategies (allocation_pct=0): log signals but don't execute
+                paper_only = strategy.config.allocation_pct <= 0
+                if paper_only:
+                    for signal in results:
+                        if isinstance(signal, TradeSignal) and self._state:
+                            self._state.log_trade(
+                                symbol=signal.symbol,
+                                strategy_id=signal.strategy_id,
+                                side=signal.side.value,
+                                action="paper_signal",
+                                price=str(signal.entry_price),
+                                metadata=signal.metadata,
+                            )
+                    logger.info("strategy_tick_signals_paper",
+                                 strategy=sid, count=len(results))
+                else:
+                    for signal in results:
+                        await self._event_bus.publish(Event(
+                            type=EventType.SIGNAL_GENERATED,
+                            data=signal,
+                            source=sid,
+                        ))
+                    logger.info("strategy_tick_signals",
+                                 strategy=sid, count=len(results))
             elif strategy.config.strategy_type == StrategyType.SYSTEMATIC:
                 # Publish rebalance event — executor handles it
                 await self._event_bus.publish(Event(
