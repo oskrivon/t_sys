@@ -454,7 +454,13 @@ class ExecutionManager:
         latency_ms = (asyncio.get_event_loop().time() - t0) * 1000
 
         # Compute blended entry price
-        if filled_qty > 0 and remaining > 0:
+        if remaining <= 0:
+            # Fully filled via limit (detected via position check or partial poll)
+            logger.info("limit_entry_filled_via_check", symbol=symbol,
+                         price=limit_price, latency_ms=round(latency_ms, 1))
+            return Decimal(str(limit_price)), latency_ms
+        elif filled_qty > 0:
+            # Partial limit + partial market
             market_price = float(raw_market.get("average") or raw_market.get("price") or limit_price)
             blended = (filled_qty * limit_price + remaining * market_price) / qty
             logger.info("limit_entry_partial_blend", symbol=symbol,
@@ -463,7 +469,7 @@ class ExecutionManager:
                          blended=round(blended, 8))
             return Decimal(str(round(blended, 8))), latency_ms
         else:
-            # Fully market
+            # Fully market (no limit fill)
             price = raw_market.get("average") or raw_market.get("price") or 0
             logger.info("limit_entry_full_market_fallback", symbol=symbol,
                          price=price, latency_ms=round(latency_ms, 1))
