@@ -81,6 +81,20 @@ def binance_spot() -> CostModel:
     ])
 
 
+def us_equities_spot() -> CostModel:
+    """US equities spot (Alpaca/IBKR), S&P 100 liquid names.
+
+    Commission: ~1 bps/side (Alpaca zero, IBKR ~0.5-1 bps — use 1 bps).
+    Slippage: ~2 bps total (liquid large-cap).
+    No funding or borrow for long-only.
+    """
+    return CostModel([
+        TakerFee(0.0001),
+        FixedSlippage(0.0001),
+        SpreadCost(0.00005),
+    ])
+
+
 def zero_cost() -> CostModel:
     """No costs — for debugging or comparing gross vs net."""
     return CostModel([])

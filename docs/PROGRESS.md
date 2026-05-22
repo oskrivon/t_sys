@@ -2,6 +2,30 @@
 
 ## Лог
 
+### 2026-05-21 — Equity Market Research: dead end
+
+**Гипотеза:** LLM-анализ earnings transcripts может предсказывать post-earnings drift (PEAD).
+Также рассмотрены: MOEX micro-cap (Евротранс), SEC 8-K dilution detector, hedge fund benchmarks.
+
+**Результат:** dead end для всех направлений фондового рынка.
+
+| Направление | Edge/trade | Costs/trade | Net | Вердикт |
+|---|---|---|---|---|
+| PEAD S&P 100 (5d) | +0.095% | 0.03% | +0.07% | Too small |
+| MOEX micro-cap short | N/A | N/A | N/A | No short available |
+| US 8-K dilution short | 5-8% | 3-5% | 0-2% | Costs = edge |
+| LLM earnings Phase 2 | ??? | $35 LLM | ??? | Baseline too weak |
+
+**Ключевые выводы:**
+1. Средний хедж-фонд делает 5%/год — хуже S&P 500 в 3 раза
+2. Medallion (66% gross) = 500+ мелких стратегий, не один сигнал
+3. Фондовый рынок зрелый, costs высокие, edge выедается
+4. Крипто-рынок остаётся лучшей площадкой для нашего масштаба
+
+**Артефакты:** `src/earnings/` (полный MVP), `docs/EQUITY_MARKET_RESEARCH.md`
+
+---
+
 ### 2026-05-20 — Weekend Delta-Neutral: dead end
 
 **Гипотеза:** вместо directional entry (ensemble vote) открывать обе ноги (long+short),

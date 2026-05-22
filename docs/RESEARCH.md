@@ -1,5 +1,9 @@
 # Исследования и решения
 
+## Архив
+
+- [Equity Market / LLM Earnings / Micro-Cap](EQUITY_MARKET_RESEARCH.md) — **DEAD END**. PEAD edge ~0.1%/trade (negligible). MOEX micro-cap нет шорта. US 8-K dilution: costs=edge. Фондовый рынок не подходит для нашего масштаба.
+
 ## Активные исследования
 
 - **Weekend Effect: Cross-Asset -> BTC** — **LIVE with mid-weekend reversal**. Baseline Sharpe 2.82, +reversal OOS Sharpe 4.41. 5-predictor ensemble, Sat 21:00 UTC flip if losing >0.3%. 7/7 scorecard PASS. [Детали](WEEKEND_EFFECT_RESEARCH.md)
