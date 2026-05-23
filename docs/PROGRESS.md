@@ -2,6 +2,13 @@
 
 ## Лог
 
+### 2026-05-24 — V-Bottom Dip Buying strategy + look-ahead detection
+
+**Исследование:** 6 этапов — базовый паттерн (Z=5.67), фичи (NATR p=0.020), TradFi контекст (NQ фильтр: crypto-only WR 61.6% vs macro 44.4%), SHORT (не работает = smart beta), exit (fixed hold > trailing), **look-ahead bias** (timestamp shift test: Sharpe shift0/shift-1 = 1.89).
+**Честные числа:** CAGR +25%/yr, Sharpe 1.05, MaxDD -24%, 300 trades, WR 60%.
+**Инфраструктура:** добавлен `src/validation/lookahead.py` — timestamp shift test для детекции look-ahead bias в scorecard. Выявляет случаи когда CPCV/DSR/PBO не ловят data leakage.
+**Status:** paper trading. [Детали](V_BOTTOM_RESEARCH.md)
+
 ### 2026-05-23 — Weekend SL + V-Bottom Re-Entry: confirmed
 
 **Проблема:** SL=2% теряет 51% ложных стопов, total PnL падает с +75% до +60%.

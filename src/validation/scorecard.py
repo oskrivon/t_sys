@@ -44,6 +44,7 @@ from .regime import (
     detect_regimes,
     regime_analysis,
 )
+from .lookahead import ShiftTestResult, timestamp_shift_test
 
 
 @dataclass
@@ -60,6 +61,7 @@ class ValidationReport:
     factor: Optional[FactorResult] = None
     regime: Optional[RegimeAnalysisResult] = None
     regime_detection: Optional[RegimeDetectionResult] = None
+    lookahead: Optional[ShiftTestResult] = None
 
     # Gate results
     checks: dict[str, dict] = field(default_factory=dict)
@@ -126,6 +128,8 @@ class ValidationReport:
         if self.regime:
             print()
             print(self.regime.summary())
+        if self.lookahead:
+            self.lookahead.print_summary()
         print()
 
     def to_dict(self) -> dict:
