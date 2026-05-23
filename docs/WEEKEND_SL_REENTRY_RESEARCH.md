@@ -1,7 +1,7 @@
 # Weekend SL + V-Bottom Re-Entry Research
 
 **Дата:** 2026-05-23
-**Статус:** CONFIRMED — готово к имплементации
+**Статус:** DEPLOYED (2026-05-23)
 
 ## Проблема
 
@@ -74,6 +74,44 @@ re_entry_sl = 1.0% # SL на re-entry позицию
 max_reentry_h = 16 # не входить если прошло >16h после SL (WR падает)
 ```
 
+## Квант-валидация (полный scorecard)
+
+127 trades, 5.3 лет, 7 вариантов стратегии.
+
+### Performance comparison
+
+| Вариант | Total PnL | PnL/yr | Sharpe | MaxDD |
+|---|---|---|---|---|
+| SL=2% (old) | +61.04% | ~11.5%/yr | 1.48 | -13.3% |
+| **SL=0.75%+reentry** | **+80.14%** | **~15.1%/yr** | **2.09** | **-4.7%** |
+| No SL | +75.92% | ~14.3%/yr | 1.75 | -9.2% |
+
+### Scorecard (7 tests)
+
+| Тест | SL=2% (old) | **SL=0.75%+reentry** | No SL |
+|---|---|---|---|
+| CPCV median Sharpe | 1.00 ✅ | **1.34** ✅ | 1.10 ✅ |
+| CPCV P(Sharpe>0) | 100% ✅ | **100%** ✅ | 100% ✅ |
+| **DSR p-value** | 0.187 ❌ | **0.016** ✅ | 0.094 ❌ |
+| MinBTL | 5.35y ✅ | **5.35y** ✅ | 5.35y ✅ |
+| PBO | 0.112 ✅ | **0.112** ✅ | 0.112 ✅ |
+| Factor alpha t-stat | 0.60 ❌ | 0.58 ❌ | 0.61 ❌ |
+| Multi-regime | 1 ❌ | 1 ❌ | 1 ❌ |
+| **Total** | **4/7** | **5/7** | **4/7** |
+
+**SL+reentry — единственный вариант, проходящий Deflated Sharpe Ratio (p=0.016).**
+
+### Walk-forward H2 (OOS)
+
+| Variant | N | WR | Sharpe | DSR p-value |
+|---|---|---|---|---|
+| SL=2% (old) | 61 | 54% | 1.30 | 0.052 ❌ |
+| **SL=0.75%+reentry** | 61 | 46% | 1.29 | **0.048** ✅ |
+
+### Слабые места (structural, одинаковые для всех)
+- Factor alpha t-stat ~0.6 — мало данных для значимости (alpha ~1%/yr)
+- Multi-regime: работает только в low_vol (weekend effect = low-vol phenomenon)
+
 ## Данные
 
 - 127 trades, 5.3 лет (2021-01 — 2026-05)
@@ -81,11 +119,9 @@ max_reentry_h = 16 # не входить если прошло >16h после S
 - Macro: KWEB, EWJ, XLK (3-of-3 proxy для prod 5-of-5)
 - SL detection: intra-candle low/high для точности
 
-## Следующие шаги
+## Deployed
 
-1. Имплементация в `src/weekend/runner.py`:
-   - Изменить SL с 2% на 0.75%
-   - Добавить bounce detection + auto re-entry в `run_sl_check()`
-   - Re-entry SL = 1.0%
-2. Полный квант анализ (CPCV, deflated Sharpe, regime analysis)
-3. Deploy
+- Commit: `0416d65` (2026-05-23)
+- Config: SL=0.75%, bounce=0.5%, re_sl=1.0%, max_h=16
+- Cron: check-sl каждый час (Sat+Sun) для bounce detection
+- Файлы: `config.py`, `runner.py`, `state.py`, `weekend_signal.py`

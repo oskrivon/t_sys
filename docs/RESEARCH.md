@@ -8,7 +8,7 @@
 
 ## Активные исследования
 
-- **Weekend SL + V-Bottom Re-Entry** — **CONFIRMED**. SL 2%→0.75% + bounce 0.5% re-entry: Sharpe 0.92→2.13, total PnL +82%, MaxDD -4.7%. Works LONG (54% WR) and SHORT (62% WR). [Детали](WEEKEND_SL_REENTRY_RESEARCH.md)
+- **Weekend SL + V-Bottom Re-Entry** — **DEPLOYED**. SL 2%→0.75% + bounce 0.5% re-entry: Sharpe 1.48→2.09, PnL/yr 11.5%→15.1%, MaxDD -13.3%→-4.7%. Scorecard 5/7 PASS, DSR p=0.016. [Детали](WEEKEND_SL_REENTRY_RESEARCH.md)
 - **Weekend Effect: Cross-Asset -> BTC** — **LIVE with mid-weekend reversal**. Baseline Sharpe 2.82, +reversal OOS Sharpe 4.41. 5-predictor ensemble, Sat 21:00 UTC flip if losing >0.3%. 7/7 scorecard PASS. [Детали](WEEKEND_EFFECT_RESEARCH.md)
 - **Calendar Events: FOMC + Q-Expiry** — **CONFIRMED OOS**. Pre-FOMC LONG (WR 70%, 8/yr) + Post-Q-expiry SHORT (WR 58%, 4/yr). Combined Sharpe_net 1.06, ~14% annual. Zero overlap с weekend signal.
 
