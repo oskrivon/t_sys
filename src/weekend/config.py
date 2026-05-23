@@ -42,10 +42,10 @@ class WeekendConfig(BaseModel):
     leverage: int = 3
     margin_reserve_pct: float = 0.05  # keep 5% as buffer for fees/funding
 
-    # Mid-weekend reversal: if losing > threshold at checkpoint, flip direction
-    # OOS validated: +24h/0.3% -> Sharpe 3.35->4.41, WR 60%->74% on H2
-    reversal_checkpoint_h: int = 24       # hours after Friday entry (= Sat 21:00 UTC)
-    reversal_threshold_pct: float = 0.003 # 0.3% unrealized loss triggers reversal
+    # Mid-weekend reversal: DEPRECATED, subsumed by V-bottom re-entry.
+    # Kept for config backwards compatibility. No-op in runner.
+    reversal_checkpoint_h: int = 24
+    reversal_threshold_pct: float = 0.003
 
     # V-bottom re-entry: after SL hit, detect bounce and re-enter same direction
     # Validated: SL 0.75% + bounce 0.5% + re-SL 1.0% → Sharpe 2.13, total +82%
