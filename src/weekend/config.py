@@ -47,6 +47,12 @@ class WeekendConfig(BaseModel):
     reversal_checkpoint_h: int = 24       # hours after Friday entry (= Sat 21:00 UTC)
     reversal_threshold_pct: float = 0.003 # 0.3% unrealized loss triggers reversal
 
+    # V-bottom re-entry: after SL hit, detect bounce and re-enter same direction
+    # Validated: SL 0.75% + bounce 0.5% + re-SL 1.0% → Sharpe 2.13, total +82%
+    reentry_bounce_pct: float = 0.005     # 0.5% bounce from local low triggers re-entry
+    reentry_sl_pct: float = 0.01          # 1.0% SL on re-entry position
+    reentry_max_hours: int = 16           # don't re-enter if >16h after SL (WR drops)
+
     @field_validator("majority_threshold")
     @classmethod
     def threshold_valid(cls, v: int, info) -> int:
@@ -106,5 +112,5 @@ DEFAULT_PREDICTORS = [
 DEFAULT_CONFIG = WeekendConfig(
     predictors=DEFAULT_PREDICTORS,
     majority_threshold=3,
-    stop_loss_pct=0.02,
+    stop_loss_pct=0.0075,
 )

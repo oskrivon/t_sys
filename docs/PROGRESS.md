@@ -2,6 +2,37 @@
 
 ## Лог
 
+### 2026-05-23 — Weekend SL + V-Bottom Re-Entry: confirmed
+
+**Проблема:** SL=2% теряет 51% ложных стопов, total PnL падает с +75% до +60%.
+**Исследование:** 6 этапов — post-SL recovery (dead end), SL prediction (fri_range p=0.007 но режет trades), tighter SL, V-bottom re-entry, 6 bottom detectors, LONG/SHORT asymmetry.
+**Результат:** SL=0.75% + bounce 0.5% re-entry + re-SL=1.0% → Sharpe 2.13 (было 0.92), total +82% (было +60%), MaxDD -4.7% (было -5.7%). Simple bounce лучше всех структурных детекторов. SHORT re-entry WR=62% > LONG 54%.
+**Следующий шаг:** имплементация + полный квант анализ. [Детали](WEEKEND_SL_REENTRY_RESEARCH.md)
+
+### 2026-05-23 — Weekend SL Recovery: dead end (archived)
+
+После SL hit при сильном UP консенсусе BTC не восстанавливается (WR 40%). Re-entry без bounce detection ухудшает Sharpe. Flip = noise. [Детали](archive/WEEKEND_SL_RECOVERY_RESEARCH.md)
+
+### 2026-05-23 — Astrology vs BTC: dead end
+
+**Гипотеза:** мнительные retail-трейдеры читают гороскопы и торгуют по ним, создавая паттерны в BTC.
+**Данные:** 3202 дня BTC (2017-2026), 28 Mercury Retrograde периодов, 217 лунных событий, Google Trends (454 недели), зодиакальные транзиты всех 12 знаков.
+
+**Результат:** полный dead end.
+- Mercury Retrograde: Sharpe 0.43 vs 0.93 (direct), но не значимо
+- Lunar phases: p=0.77 (шум)
+- Google Trends "mercury retrograde": нет связи с BTC
+- Google Trends "horoscope": коррелирует с волатильностью (r=0.28, p<0.001), но это прокси retail attention
+- Zodiac transit scores: 0/12 знаков значимы, Cancer r=-0.004 (p=0.81), Pisces r=-0.009 (p=0.61)
+
+**Скрипты:** `scripts/research/astro_btc_backtest.py`, `astro_gtrends_btc.py`, `astro_zodiac_trading.py`
+
+### 2026-05-23 — Weekend SL Recovery: dead end
+
+**Гипотеза:** при сильном UP консенсусе + SL hit, BTC восстанавливается → re-entry LONG или flip не нужен.
+**Данные:** BTC 1h (48k candles), 43 trades, 10 SL hits. Тестировано: accept SL, flip SHORT, re-enter LONG (+0h/+1h/+2h/+4h/+8h/+12h cooldown).
+**Результат:** Recovery rate 40% (57% при unanimous). Re-entry LONG ухудшает Sharpe (2.36→1.98). Flip = noise (+0.02 Sharpe). Оптимально — принять SL и ничего не делать. [Детали](archive/WEEKEND_SL_RECOVERY_RESEARCH.md)
+
 ### 2026-05-21 — Equity Market Research: dead end
 
 **Гипотеза:** LLM-анализ earnings transcripts может предсказывать post-earnings drift (PEAD).

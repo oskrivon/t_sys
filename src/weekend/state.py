@@ -41,16 +41,22 @@ def init_db(db_path: str) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute(SCHEMA)
     # Migrate: add reversal columns if missing (for existing DBs)
-    try:
-        conn.execute("ALTER TABLE weekend_trades ADD COLUMN reversal_price REAL")
-    except sqlite3.OperationalError:
-        pass  # column already exists
-    try:
-        conn.execute("ALTER TABLE weekend_trades ADD COLUMN reversal_time TEXT")
-    except sqlite3.OperationalError:
-        pass
+    _migrate_column(conn, "reversal_price", "REAL")
+    _migrate_column(conn, "reversal_time", "TEXT")
+    _migrate_column(conn, "reentry_price", "REAL")
+    _migrate_column(conn, "reentry_time", "TEXT")
+    _migrate_column(conn, "reentry_sl_price", "REAL")
+    _migrate_column(conn, "sl_exit_price", "REAL")  # price at SL hit (before re-entry)
     conn.commit()
     return conn
+
+
+def _migrate_column(conn: sqlite3.Connection, name: str, dtype: str) -> None:
+    """Add column if it doesn't exist."""
+    try:
+        conn.execute(f"ALTER TABLE weekend_trades ADD COLUMN {name} {dtype}")
+    except sqlite3.OperationalError:
+        pass
 
 
 def record_signal(
@@ -112,6 +118,46 @@ def mark_reversal(
         (new_direction, new_sl_price, reversal_price, now, signal_date),
     )
     conn.commit()
+
+
+def mark_sl_for_reentry(
+    conn: sqlite3.Connection,
+    signal_date: str,
+    sl_exit_price: float,
+) -> None:
+    """Record SL hit but keep trade open for potential re-entry.
+
+    Sets status='sl_pending_reentry', stores SL exit price.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """UPDATE weekend_trades
+           SET sl_hit=1, sl_exit_price=?, sl_price=NULL
+           WHERE signal_date=? AND status='open'""",
+        (sl_exit_price, signal_date),
+    )
+    conn.commit()
+    logger.info("sl_marked_for_reentry", signal_date=signal_date,
+                sl_exit_price=sl_exit_price)
+
+
+def mark_reentry(
+    conn: sqlite3.Connection,
+    signal_date: str,
+    reentry_price: float,
+    reentry_sl_price: float,
+) -> None:
+    """Record re-entry after SL hit. Update SL to new re-entry SL."""
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """UPDATE weekend_trades
+           SET reentry_price=?, reentry_time=?, sl_price=?, reentry_sl_price=?
+           WHERE signal_date=? AND status='open'""",
+        (reentry_price, now, reentry_sl_price, reentry_sl_price, signal_date),
+    )
+    conn.commit()
+    logger.info("reentry_recorded", signal_date=signal_date,
+                reentry_price=reentry_price, reentry_sl=reentry_sl_price)
 
 
 def mark_exit(

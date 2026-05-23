@@ -3,7 +3,7 @@
 
 Predictors (OOS validated): KWEB fri, EWJ fri, XLK week, XLE week, USDJPY week.
 Signal: 3/5 majority vote -> LONG/SHORT BTC.
-Entry: Friday 21:00 UTC. Exit: Sunday 23:00 UTC. SL: 2%.
+Entry: Friday 21:00 UTC. Exit: Sunday 23:00 UTC. SL: 0.75% + V-bottom re-entry.
 
 Usage:
     python scripts/weekend_signal.py friday              # paper: compute & alert
@@ -12,17 +12,17 @@ Usage:
     python scripts/weekend_signal.py friday --historical 2026-04-18
     python scripts/weekend_signal.py settle              # paper: close trade
     python scripts/weekend_signal.py settle --live       # LIVE: close positions
-    python scripts/weekend_signal.py check-sl            # paper: check stop-loss
-    python scripts/weekend_signal.py check-sl --live     # LIVE: verify exchange SL
+    python scripts/weekend_signal.py check-sl            # paper: check SL + re-entry
+    python scripts/weekend_signal.py check-sl --live     # LIVE: SL + auto re-entry
     python scripts/weekend_signal.py check-reverse       # paper: reversal check
     python scripts/weekend_signal.py check-reverse --live # LIVE: reverse if losing
     python scripts/weekend_signal.py history             # show trade history
 
 Cron (server, live):
     5,10,15 21 * * 5  weekend_signal.py friday --live
-    0 */4 * * 6       weekend_signal.py check-sl --live
-    5 21 * * 6        weekend_signal.py check-reverse --live  # Sat 21:05 UTC
-    0 */4 * * 0       weekend_signal.py check-sl --live
+    0 * * * 6         weekend_signal.py check-sl --live   # every hour (for bounce detection)
+    5 21 * * 6        weekend_signal.py check-reverse --live
+    0 * * * 0         weekend_signal.py check-sl --live   # every hour
     5 23 * * 0        weekend_signal.py settle --live
 """
 from __future__ import annotations
@@ -73,9 +73,14 @@ def cmd_check_sl(args):
         live=args.live,
     ))
     if result:
-        print(f"\nSL HIT: {result['pnl']:+.2f}%")
-    else:
-        print("OK -- no SL hit")
+        if result.get("awaiting_reentry"):
+            print(f"\nSL HIT: {result['pnl']:+.2f}% — watching for re-entry bounce")
+        elif result.get("reentry"):
+            print(f"\nRE-ENTRY at ${result['price']:,.0f} (bounce {result['bounce']:+.2f}%)")
+        elif result.get("reentry_expired"):
+            print(f"\nSL FINAL (re-entry window expired): {result['pnl']:+.2f}%")
+        else:
+            print(f"\nSL HIT: {result['pnl']:+.2f}%")
 
 
 def cmd_check_reverse(args):

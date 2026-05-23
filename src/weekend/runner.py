@@ -29,7 +29,9 @@ from src.weekend.state import (
     init_db,
     mark_entry,
     mark_exit,
+    mark_reentry,
     mark_reversal,
+    mark_sl_for_reentry,
     record_signal,
 )
 
@@ -259,10 +261,21 @@ async def run_sunday_settlement(
             logger.error("settlement_no_price")
             return None
 
-        # If reversed mid-weekend, compute combined P&L:
-        # leg1 (entry->reversal in original dir) + leg2 (reversal->exit in new dir)
-        if trade["reversal_price"] is not None:
-            # Original direction is now flipped in DB; recover original from reversal
+        # Compute P&L based on trade path
+        if trade["reentry_price"] is not None:
+            # SL hit + re-entry: leg1 (entry->SL) + leg2 (reentry->exit)
+            sl_exit = trade["sl_exit_price"] or trade["entry_price"]
+            leg1 = compute_pnl(trade["entry_price"], sl_exit, trade["direction"])
+            leg2 = compute_pnl(trade["reentry_price"], btc_price, trade["direction"])
+            pnl = leg1 + leg2
+            logger.info("settlement_reentry_trade",
+                        leg1=f"{leg1:+.2f}%", leg2=f"{leg2:+.2f}%", total=f"{pnl:+.2f}%")
+        elif trade["sl_hit"] and trade["sl_exit_price"]:
+            # SL hit but no re-entry (bounce never came) — just SL loss
+            pnl = compute_pnl(trade["entry_price"], trade["sl_exit_price"], trade["direction"])
+            logger.info("settlement_sl_only", pnl=f"{pnl:+.2f}%")
+        elif trade["reversal_price"] is not None:
+            # Mid-weekend reversal: leg1 (entry->reversal) + leg2 (reversal->exit)
             orig_dir = "short" if trade["direction"] == "long" else "long"
             leg1 = compute_pnl(trade["entry_price"], trade["reversal_price"], orig_dir)
             leg2 = compute_pnl(trade["reversal_price"], btc_price, trade["direction"])
@@ -304,10 +317,14 @@ async def run_sl_check(
     send_alert: bool = True,
     live: bool = False,
 ) -> dict | None:
-    """Check if SL hit on open trade. Close early if so.
+    """Check SL on open trade. On SL hit, mark for re-entry (don't close trade).
+
+    Flow:
+    1. If no SL set (sl_price is None) → check for re-entry bounce
+    2. If SL hit → close positions, mark_sl_for_reentry, start bounce tracking
+    3. If bounce detected → re-enter with new SL
 
     In live mode, exchange SL orders handle the stop — this is a backup check.
-    If SL triggered on exchange, positions are already closed; we just update DB.
     """
     conn = init_db(config.db_path)
     try:
@@ -315,15 +332,23 @@ async def run_sl_check(
         if not trade:
             return None
 
-        if trade["sl_price"] is None:
-            logger.warning("no_sl_price", date=trade["signal_date"])
-            return None
-
         btc_price = _fetch_btc_price(config.target_symbol)
         if btc_price is None:
             return None
 
-        # In live mode, also verify exchange positions
+        # ── Phase 2: SL already hit, watching for re-entry bounce ──
+        if trade["sl_price"] is None and trade["sl_hit"]:
+            return await _check_reentry_bounce(
+                conn, config, trade, btc_price, send_alert, live,
+            )
+
+        if trade["sl_price"] is None:
+            logger.warning("no_sl_price", date=trade["signal_date"])
+            return None
+
+        # ── Phase 1: Check if SL hit ──
+        sl_hit_detected = False
+
         if live:
             from src.weekend.executor import check_position, close_position
 
@@ -336,49 +361,43 @@ async def run_sl_check(
                                 exchange=exch, qty=pos["qty"],
                                 upnl=pos.get("upnl"))
 
-            # If no positions on exchanges but DB says open → SL triggered on exchange
             if not any_open:
                 logger.warning("sl_triggered_on_exchange",
                                date=trade["signal_date"])
-                pnl = compute_pnl(trade["entry_price"], btc_price, trade["direction"])
-                mark_exit(conn, trade["signal_date"], btc_price, pnl, sl_hit=True)
-                stats = get_stats(conn)
+                sl_hit_detected = True
 
-                message = format_settlement_message(
-                    trade["signal_date"], trade["direction"],
-                    trade["entry_price"], btc_price, pnl, True, stats,
-                )
-                message += "\n** SL triggered on exchange (positions already closed) **"
-                print(message)
-
-                if send_alert:
-                    tg = _telegram_config()
-                    if tg:
-                        await send_telegram(message, tg[0], tg[1])
-
-                return {"signal_date": trade["signal_date"], "pnl": pnl, "sl_hit": True}
-
-        if is_sl_hit(btc_price, trade["sl_price"], trade["direction"]):
-            # Live: close remaining positions (backup, exchange SL should have handled it)
+        if not sl_hit_detected and is_sl_hit(btc_price, trade["sl_price"], trade["direction"]):
             if live:
+                from src.weekend.executor import close_position
                 for exch in config.exchanges:
                     close_position(exch, config.target_symbol, trade["direction"])
+            sl_hit_detected = True
 
-            pnl = compute_pnl(trade["entry_price"], btc_price, trade["direction"])
-            mark_exit(conn, trade["signal_date"], btc_price, pnl, sl_hit=True)
-            stats = get_stats(conn)
+        if sl_hit_detected:
+            sl_pnl = -config.stop_loss_pct * 100
+            mark_sl_for_reentry(conn, trade["signal_date"], btc_price)
 
             logger.warning(
-                "sl_hit",
+                "sl_hit_awaiting_reentry",
                 date=trade["signal_date"],
                 price=btc_price,
                 sl=trade["sl_price"],
-                pnl=f"{pnl:+.2f}%",
+                pnl=f"{sl_pnl:+.2f}%",
             )
 
-            message = format_settlement_message(
-                trade["signal_date"], trade["direction"],
-                trade["entry_price"], btc_price, pnl, True, stats,
+            message = (
+                f"========================================\n"
+                f"WEEKEND SL HIT — AWAITING RE-ENTRY\n"
+                f"Date: {trade['signal_date']}\n"
+                f"========================================\n"
+                f"\n"
+                f"Direction: {trade['direction'].upper()}\n"
+                f"Entry: ${trade['entry_price']:,.0f}\n"
+                f"SL exit: ${btc_price:,.0f}\n"
+                f"SL P&L: {sl_pnl:+.2f}%\n"
+                f"\n"
+                f"Watching for {config.reentry_bounce_pct*100:.1f}% bounce to re-enter...\n"
+                f"========================================\n"
             )
             print(message)
 
@@ -387,7 +406,8 @@ async def run_sl_check(
                 if tg:
                     await send_telegram(message, tg[0], tg[1])
 
-            return {"signal_date": trade["signal_date"], "pnl": pnl, "sl_hit": True}
+            return {"signal_date": trade["signal_date"],
+                    "pnl": sl_pnl, "sl_hit": True, "awaiting_reentry": True}
 
         logger.info(
             "sl_check_ok",
@@ -395,9 +415,191 @@ async def run_sl_check(
             price=btc_price,
             sl=trade["sl_price"],
         )
+        print(f"OK -- no SL hit")
         return None
     finally:
         conn.close()
+
+
+async def _check_reentry_bounce(
+    conn,
+    config: WeekendConfig,
+    trade,
+    btc_price: float,
+    send_alert: bool,
+    live: bool,
+) -> dict | None:
+    """After SL hit: check if price has bounced enough to re-enter.
+
+    Bounce = price moved back in original direction by reentry_bounce_pct
+    from sl_exit_price (the local extreme at/after SL).
+    """
+    sl_exit_price = trade["sl_exit_price"]
+    if sl_exit_price is None:
+        logger.warning("no_sl_exit_price", date=trade["signal_date"])
+        return None
+
+    direction = trade["direction"]
+    entry_price = trade["entry_price"]
+
+    # Check if already re-entered
+    if trade["reentry_price"] is not None:
+        # Already re-entered, check re-entry SL
+        re_sl = trade["reentry_sl_price"]
+        if re_sl and is_sl_hit(btc_price, re_sl, direction):
+            # Re-entry SL hit — close trade for good
+            if live:
+                from src.weekend.executor import close_position
+                for exch in config.exchanges:
+                    close_position(exch, config.target_symbol, direction)
+
+            # Total PnL: original SL + re-entry loss
+            orig_sl_pnl = compute_pnl(entry_price, sl_exit_price, direction)
+            re_pnl = -config.reentry_sl_pct * 100
+            total_pnl = orig_sl_pnl + re_pnl
+            mark_exit(conn, trade["signal_date"], btc_price, total_pnl, sl_hit=True)
+
+            logger.warning("reentry_sl_hit", date=trade["signal_date"],
+                           price=btc_price, total_pnl=f"{total_pnl:+.2f}%")
+
+            stats = get_stats(conn)
+            message = format_settlement_message(
+                trade["signal_date"], direction,
+                entry_price, btc_price, total_pnl, True, stats,
+            )
+            message += "\n** Re-entry SL hit **"
+            print(message)
+
+            if send_alert:
+                tg = _telegram_config()
+                if tg:
+                    await send_telegram(message, tg[0], tg[1])
+
+            return {"signal_date": trade["signal_date"], "pnl": total_pnl,
+                    "sl_hit": True, "reentry_sl_hit": True}
+
+        logger.info("reentry_sl_check_ok", date=trade["signal_date"],
+                    price=btc_price, re_sl=re_sl)
+        return None
+
+    # Check time limit: don't re-enter too late
+    if trade["entry_time"]:
+        entry_time = datetime.fromisoformat(trade["entry_time"])
+        hours_since_entry = (datetime.now(timezone.utc) - entry_time).total_seconds() / 3600
+        max_reentry_h = config.reentry_max_hours + (
+            (sl_exit_price - entry_price) / entry_price * 100  # approximate SL hour
+            if direction == "long" else 0
+        )
+        # Simple check: entry + SL + bounce must be within weekend window
+        if hours_since_entry > 40:  # too close to Sunday exit
+            logger.info("reentry_too_late", date=trade["signal_date"],
+                        hours=hours_since_entry)
+            # Close trade with just the SL loss
+            pnl = compute_pnl(entry_price, sl_exit_price, direction)
+            mark_exit(conn, trade["signal_date"], sl_exit_price, pnl, sl_hit=True)
+
+            stats = get_stats(conn)
+            message = format_settlement_message(
+                trade["signal_date"], direction,
+                entry_price, sl_exit_price, pnl, True, stats,
+            )
+            message += "\n** Re-entry window expired, SL loss final **"
+            print(message)
+
+            if send_alert:
+                tg = _telegram_config()
+                if tg:
+                    await send_telegram(message, tg[0], tg[1])
+
+            return {"signal_date": trade["signal_date"], "pnl": pnl,
+                    "sl_hit": True, "reentry_expired": True}
+
+    # Check bounce: has price recovered enough from SL exit?
+    if direction == "long":
+        bounce = (btc_price - sl_exit_price) / sl_exit_price
+    else:
+        bounce = (sl_exit_price - btc_price) / sl_exit_price
+
+    logger.info("reentry_bounce_check", date=trade["signal_date"],
+                direction=direction, price=btc_price,
+                sl_exit=sl_exit_price,
+                bounce_pct=f"{bounce*100:+.2f}%",
+                threshold=f"{config.reentry_bounce_pct*100:.1f}%")
+
+    if bounce < config.reentry_bounce_pct:
+        # Update sl_exit_price if price moved further against us (track local extreme)
+        if direction == "long" and btc_price < sl_exit_price:
+            conn.execute(
+                "UPDATE weekend_trades SET sl_exit_price=? WHERE signal_date=? AND status='open'",
+                (btc_price, trade["signal_date"]),
+            )
+            conn.commit()
+            logger.info("reentry_local_low_updated", price=btc_price)
+        elif direction == "short" and btc_price > sl_exit_price:
+            conn.execute(
+                "UPDATE weekend_trades SET sl_exit_price=? WHERE signal_date=? AND status='open'",
+                (btc_price, trade["signal_date"]),
+            )
+            conn.commit()
+            logger.info("reentry_local_high_updated", price=btc_price)
+
+        print(f"OK -- bounce {bounce*100:+.2f}%, need {config.reentry_bounce_pct*100:.1f}%")
+        return None
+
+    # ── Bounce detected! Re-enter ──
+    reentry_sl = compute_sl_price(btc_price, direction, config.reentry_sl_pct)
+
+    logger.warning(
+        "reentry_triggered",
+        date=trade["signal_date"],
+        direction=direction,
+        price=btc_price,
+        bounce=f"{bounce*100:+.2f}%",
+        reentry_sl=reentry_sl,
+    )
+
+    if live:
+        from src.weekend.executor import open_position
+
+        for exch in config.exchanges:
+            fill = open_position(
+                exchange_id=exch,
+                symbol=config.target_symbol,
+                direction=direction,
+                notional=config.notional_per_exchange,
+                leverage=config.leverage,
+                sl_price=reentry_sl,
+                margin_reserve_pct=config.margin_reserve_pct,
+            )
+            if fill:
+                logger.info("reentry_filled", exchange=exch,
+                            price=fill.avg_price, qty=fill.qty)
+
+    mark_reentry(conn, trade["signal_date"], btc_price, reentry_sl)
+
+    message = (
+        f"========================================\n"
+        f"WEEKEND RE-ENTRY\n"
+        f"Date: {trade['signal_date']}\n"
+        f"========================================\n"
+        f"\n"
+        f"Direction: {direction.upper()} (same as original)\n"
+        f"Original entry: ${entry_price:,.0f}\n"
+        f"SL exit: ${sl_exit_price:,.0f}\n"
+        f"Re-entry: ${btc_price:,.0f}\n"
+        f"Bounce: {bounce*100:+.2f}%\n"
+        f"New SL ({config.reentry_sl_pct*100:.0f}%): ${reentry_sl:,.0f}\n"
+        f"========================================\n"
+    )
+    print(message)
+
+    if send_alert:
+        tg = _telegram_config()
+        if tg:
+            await send_telegram(message, tg[0], tg[1])
+
+    return {"signal_date": trade["signal_date"],
+            "reentry": True, "price": btc_price, "bounce": bounce * 100}
 
 
 async def run_reversal_check(
