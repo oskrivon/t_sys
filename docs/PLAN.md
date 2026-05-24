@@ -166,6 +166,18 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 
 ## TODO
 
+### Validation: timestamp shift test в стандартный scorecard pipeline
+
+**Контекст:** обнаружили что CPCV/DSR/PBO не ловят look-ahead bias (data leakage).
+Создали `src/validation/lookahead.py` с timestamp shift test — сдвигает feature
+на N дней и сравнивает Sharpe. Ratio shift0/shift-1 > 1.5 → look-ahead warning.
+
+**Задача:** интегрировать в `validate_strategy()` как опциональный тест:
+- [ ] Добавить параметр `feature_series` + `filter_fn` в `validate_strategy()`
+- [ ] Автоматически запускать shift test если feature_series передан
+- [ ] Добавить результат в scorecard print и `to_dict()`
+- [ ] Обновить все скрипты валидации (weekend, v-bottom) чтобы передавали NQ series
+
 ### Vision Scoring: валидация против реальных исходов + решение keep/drop
 
 **Контекст:** Vision scoring (Claude Sonnet via OpenRouter) оценивает графики 1-10.
