@@ -74,11 +74,22 @@ def save_state(state: dict):
         json.dump(state, f)
 
 
+def _bybit(**kwargs) -> "ccxt.bybit":
+    """Create Bybit ccxt instance (with optional proxy from env)."""
+    import ccxt
+    import os
+    cfg = {"enableRateLimit": True, **kwargs}
+    ex = ccxt.bybit(cfg)
+    proxy = os.environ.get("BYBIT_PROXY")
+    if proxy:
+        ex.proxies = {"http": proxy, "https": proxy}
+    return ex
+
+
 def fetch_btc_price() -> dict | None:
     """Fetch current BTC OHLC from Bybit."""
     try:
-        import ccxt
-        ex = ccxt.bybit()
+        ex = _bybit()
         ticker = ex.fetch_ticker("BTC/USDT:USDT")
         return {
             "price": ticker["last"],
@@ -93,8 +104,7 @@ def fetch_btc_price() -> dict | None:
 def fetch_btc_ohlcv_24h() -> list[dict] | None:
     """Fetch last 24h of BTC 1h candles for accurate drop detection."""
     try:
-        import ccxt
-        ex = ccxt.bybit({"enableRateLimit": True})
+        ex = _bybit()
         since = int((datetime.now(timezone.utc) - timedelta(hours=26)).timestamp() * 1000)
         ohlcv = ex.fetch_ohlcv("BTC/USDT:USDT", "1h", since=since, limit=30)
         return [{"ts": o[0], "open": o[1], "high": o[2], "low": o[3],
@@ -202,6 +212,16 @@ def cmd_check(args):
 
     current_price = candles[-1]["close"]
 
+    # Always compute and accumulate NATR (even without drop signal)
+    state = load_state()
+    natr = compute_natr(candles, 14)
+    state["natr_values"].append(natr)
+    if len(state["natr_values"]) > 5000:
+        state["natr_values"] = state["natr_values"][-5000:]
+    save_state(state)
+
+    natr_median = float(__import__("numpy").median(state["natr_values"])) if len(state["natr_values"]) > 50 else 0
+
     # Drop detection
     window_closes = [c["close"] for c in candles[-24:]]
     window_high = max(window_closes)
@@ -214,18 +234,7 @@ def cmd_check(args):
         conn.close()
         return
 
-    # NATR filter
-    state = load_state()
-    natr = compute_natr(candles, 14)
-
-    # Update expanding NATR history
-    state["natr_values"].append(natr)
-    if len(state["natr_values"]) > 5000:
-        state["natr_values"] = state["natr_values"][-5000:]
-    save_state(state)
-
-    natr_median = float(__import__("numpy").median(state["natr_values"])) if len(state["natr_values"]) > 50 else 0
-
+    # NATR filter (natr + natr_median already computed above)
     if natr_median > 0 and natr <= natr_median:
         logger.info("v_bottom_low_natr", natr=f"{natr:.3f}",
                     median=f"{natr_median:.3f}")
