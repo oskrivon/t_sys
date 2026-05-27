@@ -538,6 +538,7 @@ Tick bars не дают alpha (direction prediction = random, подтвержд
 - **Range Trading (corridor bounce)** — ML+Vision OOS validated: score>=6 = 200t, WR 38.5%, PF 1.29. LONG score 6-7 = 45.6% WR. Комплементарен к Miro (bounce vs breakout). Next: paper trading для gate, R:R/cost sensitivity analysis. Scripts: `scripts/research/backtest_range_trading.py`, `scripts/research/range_vision_score.py`
 - **TG signal channels (pump front-running)** — нужны каналы с императивными сигналами на Binance/Bybit (entry/TP/SL). Найденные каналы — BingX only или отчёты, не сигналы. Приоритет LOW — вернуться при наличии подходящих каналов и $1k+ капитала.
 - Funding passive yield — 3.5-5% APR на idle capital
+- **DeFi weekday parking (Пн-Пт)** — weekend стратегия держит капитал idle 5/7 дней. Варианты: Bybit Flexible Earn (~3.8% APY, API subscribe/redeem, нулевой friction если капитал на бирже), Aave на Arbitrum (3-4% APY, некастодиальный), Hyperliquid HLP (~20% APY но lumpy returns, рискован на 5-дневных окнах). На $100k Bybit Earn = ~$50/нед, HLP = ~$270/нед но с дисперсией. **Приоритет: LOW.** Вернуться когда капитал ≥$50k — до этого доход не оправдывает автоматизацию.
 - ML модели для предсказания — после того как базовая стратегия работает
 - Sentiment analysis (новости, соцсети)
 - Web dashboard

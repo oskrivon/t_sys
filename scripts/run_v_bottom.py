@@ -86,32 +86,44 @@ def _bybit(**kwargs) -> "ccxt.bybit":
     return ex
 
 
-def fetch_btc_price() -> dict | None:
+def fetch_btc_price(retries: int = 3, delay: float = 5.0) -> dict | None:
     """Fetch current BTC OHLC from Bybit."""
-    try:
-        ex = _bybit()
-        ticker = ex.fetch_ticker("BTC/USDT:USDT")
-        return {
-            "price": ticker["last"],
-            "high": ticker["high"],
-            "low": ticker["low"],
-        }
-    except Exception as e:
-        logger.error("btc_price_failed", error=str(e))
-        return None
+    import time
+    for attempt in range(1, retries + 1):
+        try:
+            ex = _bybit()
+            ticker = ex.fetch_ticker("BTC/USDT:USDT")
+            return {
+                "price": ticker["last"],
+                "high": ticker["high"],
+                "low": ticker["low"],
+            }
+        except Exception as e:
+            logger.warning("btc_price_retry", attempt=attempt, retries=retries,
+                           error=str(e))
+            if attempt < retries:
+                time.sleep(delay * attempt)
+    logger.error("btc_price_failed", retries=retries)
+    return None
 
 
-def fetch_btc_ohlcv_24h() -> list[dict] | None:
+def fetch_btc_ohlcv_24h(retries: int = 3, delay: float = 5.0) -> list[dict] | None:
     """Fetch last 24h of BTC 1h candles for accurate drop detection."""
-    try:
-        ex = _bybit()
-        since = int((datetime.now(timezone.utc) - timedelta(hours=26)).timestamp() * 1000)
-        ohlcv = ex.fetch_ohlcv("BTC/USDT:USDT", "1h", since=since, limit=30)
-        return [{"ts": o[0], "open": o[1], "high": o[2], "low": o[3],
-                 "close": o[4], "volume": o[5]} for o in ohlcv]
-    except Exception as e:
-        logger.error("btc_ohlcv_failed", error=str(e))
-        return None
+    import time
+    for attempt in range(1, retries + 1):
+        try:
+            ex = _bybit()
+            since = int((datetime.now(timezone.utc) - timedelta(hours=26)).timestamp() * 1000)
+            ohlcv = ex.fetch_ohlcv("BTC/USDT:USDT", "1h", since=since, limit=30)
+            return [{"ts": o[0], "open": o[1], "high": o[2], "low": o[3],
+                     "close": o[4], "volume": o[5]} for o in ohlcv]
+        except Exception as e:
+            logger.warning("btc_ohlcv_retry", attempt=attempt, retries=retries,
+                           error=str(e))
+            if attempt < retries:
+                time.sleep(delay * attempt)
+    logger.error("btc_ohlcv_failed", retries=retries)
+    return None
 
 
 def compute_natr(candles: list[dict], period: int = 14) -> float:

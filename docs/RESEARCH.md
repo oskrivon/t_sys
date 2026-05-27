@@ -10,6 +10,7 @@
 - [Tick Bars + Big Move Direction](archive/CASCADE_TICK_BARS_RESEARCH.md) — **NO IMPROVEMENT**. Tick sell% не улучшает direction prediction для big moves. RSI остаётся лучшим direction picker (относительное сравнение, абсолютные цифры с look-ahead bias).
 - [Informed Flow Detection](archive/CASCADE_TICK_BARS_RESEARCH.md) — **DEAD END**. Absorption (vol>2x, low price impact), stealth buy/sell (sell% divergence), breakout after quiet. 2090 signals / 90 дней / 5 монет. MFE/MAE=0.99 по всем типам — чистый random. Крипто фьючерсы не имеют "informed flow" как акции.
 - [TradFi Tick Shadow](archive/CASCADE_TICK_BARS_RESEARCH.md) — **DEAD END**. NQ big day (|ret|>1%) → BTC catch-up post-close. 44 events / 180 дней. Follow rate 48% (random). Desync filter WR=40% (хуже random). Tick sell% post-close = 47-53% на всех событиях — нет directional flow. Крипто не "тень" equity на тиковом уровне.
+- [CVD (Cumulative Volume Delta) as Feature](archive/CVD_FEATURE_RESEARCH.md) — **DEAD END**. 11 CVD-фичей (slope, price divergence, buy ratio, vol delta z-score) на 4H ТФ, 8 монет, 461 сигнал. Все |corr| < 0.05. ML accuracy 47.5% (хуже random 50.1%). Фильтр работает в обратную сторону. **Закрывает весь блок buy/sell classification в крипте: TIB, VIB, DIB, CVD — всё мертво.** Причина: wash trading + delta-neutral MM + нет informed flow.
 
 ## Активные исследования
 
