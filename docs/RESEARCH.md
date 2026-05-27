@@ -2,9 +2,14 @@
 
 ## Архив
 
+- [Signal Processing Denoising: Wavelet + Kalman](archive/SIGNAL_DENOISING_RESEARCH.md) — **DEAD END (strategy), USEFUL (Kalman velocity as tool)**. Wavelet denoising вреден (non-causal look-ahead), Kalman velocity — единственный полезный компонент: direction accuracy 54% vs RSI 47%, PF 1.25 vs 0.73. Но standalone стратегия 0/8 validation.
 - [Astrology / Zodiac / Mercury Retrograde vs BTC](archive/ASTROLOGY_BTC_RESEARCH.md) — **DEAD END**. Mercury Retrograde, лунные фазы, зодиакальные транзиты — ноль edge по всем 12 знакам. Google Trends "horoscope" коррелирует с волатильностью (r=0.28, p<0.001), но это прокси retail attention, не астрология.
 - [Weekend SL Recovery](archive/WEEKEND_SL_RECOVERY_RESEARCH.md) — **DEAD END**. После SL hit при сильном консенсусе BTC не восстанавливается (WR 40%, avg -0.20%). Re-entry ухудшает Sharpe, flip = noise. Принять SL loss — оптимально.
 - [Equity Market / LLM Earnings / Micro-Cap](EQUITY_MARKET_RESEARCH.md) — **DEAD END**. PEAD edge ~0.1%/trade (negligible). MOEX micro-cap нет шорта. US 8-K dilution: costs=edge. Фондовый рынок не подходит для нашего масштаба.
+- [Cascade Tick Bars](archive/CASCADE_TICK_BARS_RESEARCH.md) — **DEAD END**. Tick bars (500) и imbalance bars для cascade trigger detection. На 3 днях WR=100%, Sharpe=1.27 — ложный сигнал. На 90 днях (144 trade, 5 монет) WR=47%, net=-0.10%/trade, Sharpe=-3.4. MFE≈MAE → направление после триггера случайное. Инфра полезна: стриминговый парсер Binance Vision aggTrades.
+- [Tick Bars + Big Move Direction](archive/CASCADE_TICK_BARS_RESEARCH.md) — **NO IMPROVEMENT**. Tick sell% не улучшает direction prediction для big moves. RSI остаётся лучшим direction picker (относительное сравнение, абсолютные цифры с look-ahead bias).
+- [Informed Flow Detection](archive/CASCADE_TICK_BARS_RESEARCH.md) — **DEAD END**. Absorption (vol>2x, low price impact), stealth buy/sell (sell% divergence), breakout after quiet. 2090 signals / 90 дней / 5 монет. MFE/MAE=0.99 по всем типам — чистый random. Крипто фьючерсы не имеют "informed flow" как акции.
+- [TradFi Tick Shadow](archive/CASCADE_TICK_BARS_RESEARCH.md) — **DEAD END**. NQ big day (|ret|>1%) → BTC catch-up post-close. 44 events / 180 дней. Follow rate 48% (random). Desync filter WR=40% (хуже random). Tick sell% post-close = 47-53% на всех событиях — нет directional flow. Крипто не "тень" equity на тиковом уровне.
 
 ## Активные исследования
 

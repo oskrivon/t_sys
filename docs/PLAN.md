@@ -64,6 +64,13 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 - [ ] **Squeeze screener** — отдельный alert: "волатильность сжалась + объём растёт,
       скоро будет движение >5%". Без direction = для straddle или ожидания.
 - [x] **Hourly bias** — hr_europe marginal +1.1pp (15.4% vs 14.3%). Самый слабый эффект.
+- [x] **Signal processing denoising (2026-05-26)** — Wavelet (db4) + Kalman filter.
+      Baseline (raw+RSI): WR 39.7%, PF 0.83, avg -0.229%.
+      Best (wl=4 thr=0.8 LO vel=0.3): WR 47.7%, PF 1.13, avg +0.145%, total +68%.
+      **CLOSED — validation 0/8 PASS.** Grid search PF=1.13 был ложный (long-only beta
+      на bull market). На последних 8 мес: PF=0.55, -37%, 0/5 месяцев положительных.
+- [x] **Quant validation pipeline для denoised big move:** DONE — 0/8 PASS.
+      Все 8 проверок FAIL. Script: `scripts/research/bigmove_denoised_validate.py`.
 
 **Этап 3.6 — Volume Ranking Long/Short (новый трек)**
 
@@ -261,6 +268,40 @@ Validation scorecard (`src/validation/`) показал: **ни одна стр�
 - [ ] Weekend: зафиксировать VOTE(babaF+nqF+techW), paper trade 3 мес
 - [ ] VR: на паузу. Пересмотр через 6 мес с бОльшей выборкой
 - [ ] Miro: на паузу. Опционально: проверить Vision>=8 subset (83 trades)
+
+### Funding Capture: PnL tracking broken + фильтры слишком жёсткие (2026-05-27)
+
+**Состояние на 2026-05-27:**
+
+| Биржа | Balance | Deposits | Funding Income (30d) | Realized PnL | Commission | Net |
+|---|---|---|---|---|---|---|
+| Bybit | $28.86 | $0 | ~$0 | -$1.24 | ? | **~-$1.24** |
+| Binance | $31.80 | $0 | +$1.83 | -$3.81 | -$0.94 | **-$2.93** |
+
+**Проблемы:**
+
+1. **PnL не записывается в DB** — close trades не содержат `net_pnl_usdt` в metadata.
+   Невозможно анализировать per-trade P&L из нашей БД. Только exchange API показывает реальные цифры.
+   - [ ] Добавить `net_pnl_usdt` в close metadata (realized PnL + funding income за trade)
+
+2. **Bybit: 2 stuck opens без close** — PROVE (21 мая) и ALT (22 мая) были opened но never closed.
+   На бирже позиций нет = были закрыты вручную или ликвидированы, но engine не записал close.
+   - [ ] Диагностика: почему close не сработал (WS disconnect? timeout?)
+   - [ ] Добавить reconciliation: если open в DB но нет позиции на бирже → записать synthetic close
+
+3. **Фильтры отсекают почти всё** — за 7 дней:
+   - Bybit: 40 thin_book + 11 spread_too_wide = 51 skip, 0 trades
+   - Binance: 38 thin_book + 31 spread_too_wide = 69 skip, ~2-3 trades
+   - Медианный скипнутый rate = 50-67 bps (хорошие rates!)
+   - [ ] Рассмотреть ослабление: book depth 5x→3x, spread 3bps→5bps
+   - [ ] Или: адаптивный depth filter (depth_mult = f(notional)) — при $26 достаточно 3x
+
+4. **Bybit funding capture практически мёртв** — последний close 12 мая.
+   Binance работает лучше (13 trades за 15 дней), но net всё равно отрицательный.
+
+5. **Net P&L отрицательный на обеих биржах** — fees+slippage > funding income.
+   Binance: funding +$1.83 но realized -$3.81, commission -$0.94 = net -$2.93.
+   Фундаментальная проблема: при $26-32 notional fees съедают edge.
 
 ### Funding Capture: анализ limit entry T-5s (risk review)
 
@@ -478,6 +519,18 @@ Scale funding capture to multiple exchanges — different liquidity pools, no cr
 ## Backlog — Squeeze + Funding Direction
 
 - **Squeeze + Funding Extreme + Flip** — volatility squeeze + contrarian funding direction. OOS Sharpe 1.11, WR 64.7%, 34 trades на H2 (Jun 2023+). ~8-10 trades/year на 18 символах. Niche: дополнение к portfolio, не standalone. Config: vol_contraction < 0.6, funding_24h >= 10bps, flip 0.3% at +4 candles. Scripts: `scripts/tmp/squeeze_funding_multi.py`. Funding data cached: `data/raw/funding/binance_*_full.parquet` (19 sym, 2019-2026). Next: формализовать в Strategy class, paper trading, интеграция в portfolio manager.
+
+## Backlog — Tick Bars Execution Optimization (MID priority)
+
+Tick bars не дают alpha (direction prediction = random, подтверждено на 2090+ signals / 90 дней).
+Но полезны для **execution quality** — как торговать, а не что.
+
+- **Adaptive SL via tick bar duration** — текущие стратегии (weekend, V-bottom) используют фиксированный SL. Tick bar duration = натуральный volatility proxy без лага. Короткие бары = vol expansion = SL шире, длинные = тихо = SL уже. Тест: сравнить fixed SL vs duration-adaptive SL на weekend strategy.
+- **Entry timing** — перед входом в сделку проверить текущую ликвидность через tick bar duration + volume. Короткие бары с высоким volume = хорошая ликвидность, slippage низкий. Длинные пустые бары = лучше подождать. Применение: funding capture, weekend entry.
+- **Breakout quality filter для Miro** — не "куда пойдёт цена", а "реальный ли breakout". Breakout на коротких tick bars + high volume = реальный. На длинных + low volume = ложный. Тест: добавить как фичу в ML pipeline Miro strategy.
+
+Инфра готова: Binance Vision парсер, tick bar builder, aggTrades кэш (`data/cache/aggtrades/`).
+Скрипты: `scripts/research/cascade_tick_backtest.py` (стриминговый парсер, без OOM).
 
 ## Backlog -- Прочее
 

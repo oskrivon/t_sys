@@ -2,6 +2,56 @@
 
 ## Лог
 
+### 2026-05-26 — Denoised Big Move: FAIL 0/8 (closed)
+
+**Quant validation pipeline (8 checks) на best config (wl=4 thr=0.8 LO vel=0.3):**
+- Beta test: FAIL — alpha = -0.63%/trade, хуже BTC B&H (-37% vs -11%)
+- Monthly stability: FAIL — 0/5 месяцев положительных
+- Grid selection bias: FAIL — 1/3 конфигов marginal (PF=1.05), остальные убыточны
+- Holdout OOS: FAIL — holdout -5.9%, PF=0.55
+- Per-coin: FAIL — 0/3 монет в плюсе (ETH -30%, BTC -5.6%, SOL -1.5%)
+- Drawdown: FAIL — MaxDD 34.5%, never recovered
+- Slippage: FAIL — убыточен даже при 0 extra slippage (PF=0.55)
+- DSR: FAIL — annualized Sharpe -4.90
+
+**Вывод:** оригинальный PF=1.13 из grid search был ложный — long-only на 5.5 лет BTC данных (включая бычий рынок). На последних 8 мес стратегия -37%. Wavelet+Kalman denoising не создаёт edge. Закрыто.
+
+### 2026-05-25 — Tick bars research + V-bottom NATR fix
+
+**V-Bottom fix:**
+- Баг: NATR expanding median не накапливался (state сохранялся только после drop ≥3%). Починено — NATR пишется каждый час. За полдня набрал 5 samples, медиана включится через ~2 дня.
+- Добавлен `_bybit()` helper с опциональным BYBIT_PROXY через env var.
+
+**Tick bars research (DEAD END для cascade detection):**
+- Tick bars (500 trades/bar) vs time bars (1m) vs imbalance bars для cascade trigger (|ret|>0.5% + vol>3x)
+- 3-дневный тест: WR=100%, Sharpe=1.27 — ложный позитив
+- **90-дневный тест (144 trades, 5 монет, Binance Vision aggTrades): WR=47%, net=-0.10%, Sharpe=-3.4**
+- Причина: MFE≈MAE (+0.57% vs +0.56%) — направление после триггера случайное. Каскад уже произошёл к моменту входа.
+- Exhaustion exit (mom_fade, dur_expand, combined) не помог — проблема в entry, не exit
+- Sell%>80% фильтр ухудшил результат
+
+**TradFi tick shadow (DEAD END):**
+- NQ big days (|ret|>1%, 44 events / 180 дней) → BTC catch-up post-close
+- Follow rate 48% — монетка. Desync filter WR=40% — хуже random
+- Post-close tick sell% = 47-53% на всех событиях — нет directional flow
+- Крипто не реагирует на equity на тиковом уровне, корреляция только macro
+
+**Informed flow detection (DEAD END):**
+- Absorption, stealth buy/sell, breakout after quiet — 2090 signals / 90 дней / 5 монет
+- MFE/MAE = 0.99 по всем типам — чистый random
+- Strength filter не помогает. На крипто нет "informed flow" как на акциях
+
+**Tick bars для Big Move detector (частичный результат):**
+- Сравнение RSI vs tick sell% для direction на событиях с реальным big move (look-ahead в отборе!)
+- Абсолютные WR/PF невалидны (look-ahead bias в event selection), но **относительное** сравнение корректно
+- Tick sell% momentum хуже RSI, tick contrarian — сопоставим, но N=24
+- **Вывод: tick bars не улучшают direction prediction относительно RSI**
+
+**Инфраструктура (полезное):**
+- Стриминговый парсер Binance Vision aggTrades (без OOM, обработка 90 дней на 16GB сервере)
+- Tick bar builder переиспользуемый
+- aggTrades кэш: `data/cache/aggtrades/`
+
 ### 2026-05-24 — V-Bottom Dip Buying strategy + look-ahead detection
 
 **Исследование:** 6 этапов — базовый паттерн (Z=5.67), фичи (NATR p=0.020), TradFi контекст (NQ фильтр: crypto-only WR 61.6% vs macro 44.4%), SHORT (не работает = smart beta), exit (fixed hold > trailing), **look-ahead bias** (timestamp shift test: Sharpe shift0/shift-1 = 1.89).
