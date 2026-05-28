@@ -205,6 +205,22 @@ def cmd_check(args):
             print(f"EXIT: ${price:,.0f}  PnL: {pnl:+.2f}%  Hold: {hours_held:.1f}h")
             print(f"  Stats: {stats['n']} trades, WR {stats['wr']:.0f}%, "
                   f"Total: {stats['total_pnl']:+.1f}%")
+
+            # Telegram alert on exit
+            try:
+                from src.weekend.runner import _telegram_config
+                from src.weekend.alerter import send_telegram
+                import asyncio
+                tg = _telegram_config()
+                if tg:
+                    msg = (f"V-BOTTOM EXIT (paper)\n"
+                           f"BTC ${price:,.0f}\n"
+                           f"PnL: {pnl:+.2f}%\n"
+                           f"Hold: {hours_held:.1f}h\n"
+                           f"Stats: {stats['n']} trades, WR {stats['wr']:.0f}%")
+                    asyncio.run(send_telegram(msg, tg[0], tg[1]))
+            except Exception:
+                pass
         else:
             upnl = (price - open_trade["entry_price"]) / open_trade["entry_price"] * 100
             logger.info("v_bottom_holding", price=price, upnl=f"{upnl:+.2f}%",
