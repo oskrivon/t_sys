@@ -2,6 +2,52 @@
 
 ## Лог
 
+### 2026-05-31 — Weekend: убран SL, catastrophe-only 5%
+
+**MFE + trailing breakeven analysis (112 trades, 5.3yr, 1h resolution):**
+- MFE медиана = 2.5% — трейды имеют большой unrealized profit
+- 35% трейдов с MFE >= 0.3% settling negative — упущенный профит
+- НО: trailing BE@0.3% выбивает 95%+ трейдов шумом → Sharpe -4.29
+- Любой trailing breakeven < 1% убивает стратегию (crypto vol too high)
+
+**Compound returns @ 3x leverage (ключевое сравнение):**
+
+| Стратегия | CAGR | $1000→ | Sharpe | MDD |
+|---|---|---|---|---|
+| No SL | +117.9% | $64,357 | 2.22 | -14.6% |
+| SL 2.5% | +73.1% | $18,789 | 1.59 | -15.9% |
+| SL 0.75% (old) | +8.5% | $1,546 | 0.43 | -27.6% |
+
+**Почему SL вредит:**
+- MAE медиана = 1.1% → большинство трейдов залезают за SL перед тем как пойти в +
+- SL создаёт серии мелких потерь, которые compound → MDD хуже чем без SL
+- NET: на каждом уровне SL damage to winners > protection from losers
+
+**Robustness (10000 bootstrap, walk-forward, Monte Carlo):**
+- P(No SL > SL 2.5%): 99.9% (bootstrap)
+- Paired t-test: p=0.006
+- Walk-forward: No SL лучше в обеих половинах
+- MC MDD: median -21.3%, P(>30%) = 8%, P(>50%) = 0%
+- Sharpe 95% CI: [1.88, 2.57]
+- N=112 sufficient (min needed: 3 for Sharpe 2.2)
+
+**Recovery:** worst trade -11.4% → recovered in 2-6 weeks
+
+**Изменения в проде:**
+- `stop_loss_pct`: 0.75% → 5% (catastrophe-only)
+- V-bottom re-entry: disabled (бессмысленна при 5% SL)
+- При срабатывании: close trade, no re-entry
+
+**Частота сигналов:**
+- Trade rate: 41% weekends (~21 trades/year, 1.5-2/month)
+- Streaks of 3+ weeks: 14 раз за 5 лет (нормально)
+- 2026: 10 trades за 5 мес (2/мес)
+
+**TIB/VIB/DIB для weekend reversal detection — NOT APPLICABLE:**
+- Все исследования (tick bars, imbalance bars, CVD, informed flow) закрыты как DEAD END
+- Причина: sell%/buy% на крипто не несёт directional information
+- Стратегия работает именно потому что терпит промежуточные откаты
+
 ### 2026-05-26 — Denoised Big Move: FAIL 0/8 (closed)
 
 **Quant validation pipeline (8 checks) на best config (wl=4 thr=0.8 LO vel=0.3):**

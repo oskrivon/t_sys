@@ -15,8 +15,8 @@
 ## Активные исследования
 
 - **V-Bottom Dip Buying** — **PAPER TRADING**. BTC drop 3%/24h + NATR high + NQ T-1 not down → buy, hold 24h. Honest CAGR +25%/yr, Sharpe 1.05, MaxDD -24%. Smart beta (BTC long timing), not alpha. Look-ahead bias found in original NQ filter (+timestamp shift test added to scorecard). [Детали](V_BOTTOM_RESEARCH.md)
-- **Weekend SL + V-Bottom Re-Entry** — **DEPLOYED**. SL 2%→0.75% + bounce 0.5% re-entry: Sharpe 1.48→2.09, PnL/yr 11.5%→15.1%, MaxDD -13.3%→-4.7%. Scorecard 5/7 PASS, DSR p=0.016. [Детали](WEEKEND_SL_REENTRY_RESEARCH.md)
-- **Weekend Effect: Cross-Asset -> BTC** — **LIVE with mid-weekend reversal**. Baseline Sharpe 2.82, +reversal OOS Sharpe 4.41. 5-predictor ensemble, Sat 21:00 UTC flip if losing >0.3%. 7/7 scorecard PASS. [Детали](WEEKEND_EFFECT_RESEARCH.md)
+- **Weekend SL + V-Bottom Re-Entry** — **SUPERSEDED**. Was: SL 0.75% + bounce re-entry, Sharpe 2.09. Now: no SL (catastrophe 5% only), compound CAGR +118% vs +73% (SL 2.5%), p=0.006. Re-entry disabled. [Детали](WEEKEND_SL_REENTRY_RESEARCH.md)
+- **Weekend Effect: Cross-Asset -> BTC** — **LIVE (no SL)**. 5-predictor ensemble (KWEB, EWJ, XLK, XLE, USDJPY), majority 3/5. Compound Sharpe 2.22, CAGR +118%/yr @ 3x. Catastrophe SL 5% only. ~21 trades/yr (41% weekends). MFE analysis proves any trailing/BE hurts. [Детали](WEEKEND_EFFECT_RESEARCH.md)
 - **Calendar Events: FOMC + Q-Expiry** — **CONFIRMED OOS**. Pre-FOMC LONG (WR 70%, 8/yr) + Post-Q-expiry SHORT (WR 58%, 4/yr). Combined Sharpe_net 1.06, ~14% annual. Zero overlap с weekend signal.
 
 - **Funding Capture HF** — **ACTIVE**. Live trading engine на Bybit. [Детали](FUNDING_CAPTURE_RESEARCH.md)
