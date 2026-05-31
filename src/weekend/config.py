@@ -47,11 +47,13 @@ class WeekendConfig(BaseModel):
     reversal_checkpoint_h: int = 24
     reversal_threshold_pct: float = 0.003
 
-    # V-bottom re-entry: after SL hit, detect bounce and re-enter same direction
-    # Validated: SL 0.75% + bounce 0.5% + re-SL 1.0% → Sharpe 2.13, total +82%
-    reentry_bounce_pct: float = 0.005     # 0.5% bounce from local low triggers re-entry
-    reentry_sl_pct: float = 0.01          # 1.0% SL on re-entry position
-    reentry_max_hours: int = 16           # don't re-enter if >16h after SL (WR drops)
+    # V-bottom re-entry: DISABLED with catastrophe SL 5%.
+    # Was: SL 0.75% + bounce 0.5% + re-SL 1.0% → Sharpe 2.13.
+    # Now: no SL improves compound CAGR +117% vs +73% (SL 2.5%), p=0.006.
+    # Catastrophe SL 5% = safety net only, re-entry not needed.
+    reentry_bounce_pct: float = 0.005     # kept for config compat, not used
+    reentry_sl_pct: float = 0.01          # kept for config compat, not used
+    reentry_max_hours: int = 16           # kept for config compat, not used
 
     @field_validator("majority_threshold")
     @classmethod
@@ -112,5 +114,5 @@ DEFAULT_PREDICTORS = [
 DEFAULT_CONFIG = WeekendConfig(
     predictors=DEFAULT_PREDICTORS,
     majority_threshold=3,
-    stop_loss_pct=0.0075,
+    stop_loss_pct=0.05,  # catastrophe-only SL (was 0.0075)
 )

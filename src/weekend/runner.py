@@ -31,7 +31,6 @@ from src.weekend.state import (
     mark_exit,
     mark_reentry,
     mark_reversal,
-    mark_sl_for_reentry,
     record_signal,
 )
 
@@ -317,14 +316,10 @@ async def run_sl_check(
     send_alert: bool = True,
     live: bool = False,
 ) -> dict | None:
-    """Check SL on open trade. On SL hit, mark for re-entry (don't close trade).
+    """Catastrophe SL check — closes trade permanently if 5% SL hit.
 
-    Flow:
-    1. If no SL set (sl_price is None) → check for re-entry bounce
-    2. If SL hit → close positions, mark_sl_for_reentry, start bounce tracking
-    3. If bounce detected → re-enter with new SL
-
-    In live mode, exchange SL orders handle the stop — this is a backup check.
+    No re-entry logic: backtest shows hold-to-settlement is optimal,
+    this SL exists only as a safety net for black swan events.
     """
     conn = init_db(config.db_path)
     try:
@@ -336,17 +331,15 @@ async def run_sl_check(
         if btc_price is None:
             return None
 
-        # ── Phase 2: SL already hit, watching for re-entry bounce ──
-        if trade["sl_price"] is None and trade["sl_hit"]:
-            return await _check_reentry_bounce(
-                conn, config, trade, btc_price, send_alert, live,
-            )
+        # If trade already hit SL (legacy state), nothing to do
+        if trade["sl_hit"]:
+            return None
 
         if trade["sl_price"] is None:
             logger.warning("no_sl_price", date=trade["signal_date"])
             return None
 
-        # ── Phase 1: Check if SL hit ──
+        # ── Check if catastrophe SL hit ──
         sl_hit_detected = False
 
         if live:
@@ -375,28 +368,31 @@ async def run_sl_check(
 
         if sl_hit_detected:
             sl_pnl = -config.stop_loss_pct * 100
-            mark_sl_for_reentry(conn, trade["signal_date"], btc_price)
+            # Mark as terminal SL hit — no re-entry
+            from src.weekend.ensemble import compute_pnl
+            actual_pnl = compute_pnl(trade["entry_price"], btc_price, trade["direction"])
+            mark_exit(conn, trade["signal_date"], btc_price, actual_pnl, sl_hit=True)
 
             logger.warning(
-                "sl_hit_awaiting_reentry",
+                "catastrophe_sl_hit",
                 date=trade["signal_date"],
                 price=btc_price,
                 sl=trade["sl_price"],
-                pnl=f"{sl_pnl:+.2f}%",
+                pnl=f"{actual_pnl:+.2f}%",
             )
 
             message = (
                 f"========================================\n"
-                f"WEEKEND SL HIT — AWAITING RE-ENTRY\n"
+                f"WEEKEND CATASTROPHE SL HIT\n"
                 f"Date: {trade['signal_date']}\n"
                 f"========================================\n"
                 f"\n"
                 f"Direction: {trade['direction'].upper()}\n"
                 f"Entry: ${trade['entry_price']:,.0f}\n"
-                f"SL exit: ${btc_price:,.0f}\n"
-                f"SL P&L: {sl_pnl:+.2f}%\n"
+                f"Exit: ${btc_price:,.0f}\n"
+                f"P&L: {actual_pnl:+.2f}%\n"
                 f"\n"
-                f"Watching for {config.reentry_bounce_pct*100:.1f}% bounce to re-enter...\n"
+                f"Trade closed. No re-entry.\n"
                 f"========================================\n"
             )
             print(message)
@@ -407,7 +403,7 @@ async def run_sl_check(
                     await send_telegram(message, tg[0], tg[1])
 
             return {"signal_date": trade["signal_date"],
-                    "pnl": sl_pnl, "sl_hit": True, "awaiting_reentry": True}
+                    "pnl": actual_pnl, "sl_hit": True}
 
         logger.info(
             "sl_check_ok",
