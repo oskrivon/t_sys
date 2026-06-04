@@ -107,16 +107,26 @@ def fetch_btc_price(retries: int = 3, delay: float = 5.0) -> dict | None:
     return None
 
 
-def fetch_btc_ohlcv_24h(retries: int = 3, delay: float = 5.0) -> list[dict] | None:
-    """Fetch last 24h of BTC 1h candles for accurate drop detection."""
+def fetch_btc_ohlcv(hours: int = 26, retries: int = 3,
+                    delay: float = 5.0) -> list[dict] | None:
+    """Fetch BTC 1h candles for the last ``hours`` hours."""
     import time
     for attempt in range(1, retries + 1):
         try:
             ex = _bybit()
-            since = int((datetime.now(timezone.utc) - timedelta(hours=26)).timestamp() * 1000)
-            ohlcv = ex.fetch_ohlcv("BTC/USDT:USDT", "1h", since=since, limit=30)
+            since = int((datetime.now(timezone.utc) - timedelta(hours=hours)).timestamp() * 1000)
+            all_candles: list[list] = []
+            while True:
+                batch = ex.fetch_ohlcv("BTC/USDT:USDT", "1h", since=since, limit=200)
+                if not batch:
+                    break
+                all_candles.extend(batch)
+                since = batch[-1][0] + 1
+                if len(batch) < 200:
+                    break
+                time.sleep(0.15)
             return [{"ts": o[0], "open": o[1], "high": o[2], "low": o[3],
-                     "close": o[4], "volume": o[5]} for o in ohlcv]
+                     "close": o[4], "volume": o[5]} for o in all_candles]
         except Exception as e:
             logger.warning("btc_ohlcv_retry", attempt=attempt, retries=retries,
                            error=str(e))
@@ -124,6 +134,26 @@ def fetch_btc_ohlcv_24h(retries: int = 3, delay: float = 5.0) -> list[dict] | No
                 time.sleep(delay * attempt)
     logger.error("btc_ohlcv_failed", retries=retries)
     return None
+
+
+def compute_weekly_return(candles: list[dict]) -> float:
+    """BTC return over the last 7 days (168 hours) from 1h candles."""
+    if len(candles) < 168:
+        return 0.0
+    return (candles[-1]["close"] - candles[-168]["close"]) / candles[-168]["close"] * 100
+
+
+def compute_vol_ratio(candles: list[dict], short: int = 10,
+                      long: int = 60) -> float:
+    """Ratio of recent volatility to average volatility."""
+    import numpy as np
+    if len(candles) < long + 1:
+        return 1.0
+    closes = [c["close"] for c in candles[-(long + 1):]]
+    rets = np.diff(closes) / closes[:-1]
+    recent_vol = float(np.std(rets[-short:]))
+    avg_vol = float(np.std(rets))
+    return recent_vol / avg_vol if avg_vol > 0 else 1.0
 
 
 def compute_natr(candles: list[dict], period: int = 14) -> float:
@@ -232,7 +262,8 @@ def cmd_check(args):
         return
 
     # --- No open position: check for entry signal ---
-    candles = fetch_btc_ohlcv_24h()
+    # Fetch 7+ days of 1h candles (for weekly trend + vol_ratio filters)
+    candles = fetch_btc_ohlcv(hours=200)
     if candles is None or len(candles) < 20:
         print("ERROR: cannot fetch candles")
         conn.close()
@@ -240,13 +271,31 @@ def cmd_check(args):
 
     current_price = candles[-1]["close"]
 
-    # Always compute and accumulate NATR (even without drop signal)
+    # Always compute and accumulate NATR (even without drop signal or filter skip)
     state = load_state()
     natr = compute_natr(candles, 14)
     state["natr_values"].append(natr)
     if len(state["natr_values"]) > 5000:
         state["natr_values"] = state["natr_values"][-5000:]
     save_state(state)
+
+    # F2: Weekly trend filter — skip if BTC already down >5% in 7 days
+    weekly_ret = compute_weekly_return(candles)
+    if weekly_ret < -5.0:
+        logger.info("v_bottom_skip_weekly_trend", weekly_ret=f"{weekly_ret:+.2f}%",
+                    price=current_price)
+        print(f"SKIP: weekly return {weekly_ret:+.2f}% (sustained downtrend)")
+        conn.close()
+        return
+
+    # F1: Vol regime filter — skip if vol_ratio > 1.8
+    vol_ratio = compute_vol_ratio(candles)
+    if vol_ratio > 1.8:
+        logger.info("v_bottom_skip_vol_regime", vol_ratio=f"{vol_ratio:.2f}",
+                    price=current_price)
+        print(f"SKIP: vol_ratio {vol_ratio:.2f} > 1.8 (volatile regime)")
+        conn.close()
+        return
 
     natr_median = float(__import__("numpy").median(state["natr_values"])) if len(state["natr_values"]) > 50 else 0
 
