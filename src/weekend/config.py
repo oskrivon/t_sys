@@ -30,7 +30,7 @@ class WeekendConfig(BaseModel):
     entry_weekday: int = 4        # Friday
     entry_hour_utc: int = 21
     exit_weekday: int = 6         # Sunday
-    exit_hour_utc: int = 23
+    exit_hour_utc: int = 12
     target_symbol: str = "BTC/USDT:USDT"
     db_path: str = "data/paper_trades.db"
     yfinance_retry_attempts: int = 3

@@ -3,7 +3,7 @@
 
 Predictors (OOS validated): KWEB fri, EWJ fri, XLK week, XLE week, USDJPY week.
 Signal: 3/5 majority vote -> LONG/SHORT BTC.
-Entry: Friday 21:00 UTC. Exit: Sunday 23:00 UTC. SL: 0.75% + V-bottom re-entry.
+Entry: Friday 21:00 UTC. Exit: Sunday 12:00 UTC. SL: 5% catastrophe only.
 
 Usage:
     python scripts/weekend_signal.py friday              # paper: compute & alert
@@ -23,7 +23,7 @@ Cron (server, live):
     0 * * * 6         weekend_signal.py check-sl --live   # every hour (for bounce detection)
     5 21 * * 6        weekend_signal.py check-reverse --live
     0 * * * 0         weekend_signal.py check-sl --live   # every hour
-    5 23 * * 0        weekend_signal.py settle --live
+    5 12 * * 0        weekend_signal.py settle --live
 """
 from __future__ import annotations
 
