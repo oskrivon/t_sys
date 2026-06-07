@@ -39,7 +39,7 @@ class WeekendConfig(BaseModel):
     # Live execution
     exchanges: list[str] = ["bybit", "binance"]
     notional_per_exchange: float = 0.0  # 0 = use full available balance
-    leverage: int = 3
+    leverage: int = 1
     margin_reserve_pct: float = 0.05  # keep 5% as buffer for fees/funding
 
     # Mid-weekend reversal: DEPRECATED, subsumed by V-bottom re-entry.
