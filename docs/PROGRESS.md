@@ -2,6 +2,46 @@
 
 ## Лог
 
+### 2026-06-08 — Spread Trading Research: DEAD END (all 4 types)
+
+De Prado spread approach протестирован на крипте — не работает:
+- **Calendar (Q vs Perp):** funding 3.9% APR = basis 3-5% APR, нет edge. Quarterly liquidity 0.1% от perps.
+- **Dynamic basis (Perp vs Spot):** MM держат <1 bps, basis ни разу не >10 bps за 3 месяца.
+- **Cross-asset (BTC/ETH и др.):** 6 пар, ни одна не коинтегрирована стабильно. BTC/ETH backtest -26%, Sharpe -0.96.
+- **Cross-exchange:** ранее подтверждено — MM выедают.
+
+Вывод: perpetual funding mechanism + MM specialization закрывают все spread арбитражи в крипте. Де Прадо математика (frac diff, structural breaks) полезна для directional, не для spreads.
+
+Скрипты: `scripts/research/calendar_spread_*.py`, `dynamic_basis_research.py`, `cross_asset_spread.py`. Архив: `docs/archive/SPREAD_TRADING_RESEARCH.md`.
+
+### 2026-06-08 — Weekend: exit Sun 12:00, leverage 1x, TP analysis
+
+**Live performance (6 trades, 2026-05-01 → 2026-06-05):**
+- WR: 1/6 = 17%, Total P&L: -6.2% (без плеча)
+- Binomial test vs backtest WR 62%: p=0.073 — на грани, но не отвергаем
+- Bayesian posterior WR: 48%, CI [28%, 69%]
+- Решение: продолжать, но снизить risk
+
+**Exit timing optimization (46 trades backtest):**
+
+| Exit | Avg | WR | Sharpe |
+|---|---|---|---|
+| Sun 12:00 UTC | +0.76% | 72% | **2.34** |
+| Sun 23:00 UTC (old) | +0.76% | 67% | 1.33 |
+
+Воскресный вечер (Asia open) добавляет vol без return. Сдвинули exit на 12:00.
+
+**Take Profit analysis:**
+- Трейды, достигшие +2%: 9/46 (20%). Из них 78% продолжили рост >2.5%
+- TP на любом уровне режет fat-tail трейды, снижает total P&L на 15-25%
+- Решение: NO TP, чистый time exit
+
+**Изменения:**
+- Leverage: 3x → 1x (Kelly от posterior = 8% vs 39% от бэктеста)
+- Exit: Sun 23:00 → Sun 12:00 UTC (Sharpe +76%)
+- Cron обновлён на сервере
+- Stopping rule: пересмотр после 20 трейдов, стоп если WR < 45%
+
 ### 2026-05-31 — Weekend: убран SL, catastrophe-only 5%
 
 **MFE + trailing breakeven analysis (112 trades, 5.3yr, 1h resolution):**

@@ -2,6 +2,9 @@
 
 ## Архив
 
+- [News Event Trading: Strategy/Saylor BTC Sale](archive/NEWS_EVENT_TRADING_RESEARCH.md) — **NOT ACTIONABLE**. Strategy продал 32 BTC (1 июня), BTC -6% за 4 дня. Наш weekend шорт поймал хвост (entry $61.8k, но reversal в вс → -1.62%). Систематизировать нельзя: N=2 за всю историю, latency vs algo-фонды, on-chain не видно (OTC/малый объём).
+- [Spread Trading: Calendar, Basis, Cross-Asset](archive/SPREAD_TRADING_RESEARCH.md) — **DEAD END (все 4 типа)**. Calendar: funding=basis, ликвидность quarterly 0.1% от perps. Dynamic basis: MM держат <1 bps. Cross-asset: ни одна пара не коинтегрирована стабильно (BTC/ETH 33% окон). De Prado spread approach не применим к крипте из-за perpetual funding mechanism.
+- [Weekend Exit Timing](archive/WEEKEND_EXIT_TIMING_RESEARCH.md) — **DEAD END**. Hourly profile, conditional exit (Sat DOWN), TP, trailing stops, L/S split exit. Лучший кандидат L=Mon04/S=Sun23 (Sharpe +0.25) не прошёл robustness: paired t-test p=0.13, bootstrap 95% CI содержит 0, underpowered (71/234 trades). Keep Sun 23:00.
 - [Signal Processing Denoising: Wavelet + Kalman](archive/SIGNAL_DENOISING_RESEARCH.md) — **DEAD END (strategy), USEFUL (Kalman velocity as tool)**. Wavelet denoising вреден (non-causal look-ahead), Kalman velocity — единственный полезный компонент: direction accuracy 54% vs RSI 47%, PF 1.25 vs 0.73. Но standalone стратегия 0/8 validation.
 - [Astrology / Zodiac / Mercury Retrograde vs BTC](archive/ASTROLOGY_BTC_RESEARCH.md) — **DEAD END**. Mercury Retrograde, лунные фазы, зодиакальные транзиты — ноль edge по всем 12 знакам. Google Trends "horoscope" коррелирует с волатильностью (r=0.28, p<0.001), но это прокси retail attention, не астрология.
 - [Weekend SL Recovery](archive/WEEKEND_SL_RECOVERY_RESEARCH.md) — **DEAD END**. После SL hit при сильном консенсусе BTC не восстанавливается (WR 40%, avg -0.20%). Re-entry ухудшает Sharpe, flip = noise. Принять SL loss — оптимально.
