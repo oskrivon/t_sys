@@ -39,7 +39,9 @@ class WeekendConfig(BaseModel):
     # Live execution
     exchanges: list[str] = ["bybit", "binance"]
     notional_per_exchange: float = 0.0  # 0 = use full available balance
-    leverage: int = 1
+    # 3x: min order 0.001 BTC (~$63) needs ~$21 margin, fits small accounts.
+    # At 1x the min-order floor exceeds available balance and every open fails.
+    leverage: int = 3
     margin_reserve_pct: float = 0.05  # keep 5% as buffer for fees/funding
 
     # Mid-weekend reversal: DEPRECATED, subsumed by V-bottom re-entry.

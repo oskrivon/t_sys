@@ -167,7 +167,12 @@ async def run_friday_signal(
                 sl_price = compute_sl_price(
                     btc_price, ensemble.direction, config.stop_loss_pct,
                 )
-                mark_entry(conn, signal_date, btc_price, sl_price)
+                # Paper mode: virtual fill, mark open immediately.
+                # Live mode: defer mark_entry until an exchange actually fills,
+                # otherwise a failed open leaves a phantom 'open' trade and the
+                # retry crons skip it (positions already open).
+                if not live:
+                    mark_entry(conn, signal_date, btc_price, sl_price)
         finally:
             conn.close()
 
@@ -190,6 +195,15 @@ async def run_friday_signal(
                     fills.append(fill)
 
             if fills:
+                # At least one exchange filled — now record the entry. Use the
+                # real average fill price across legs instead of the pre-fetch price.
+                fill_price = sum(f.avg_price for f in fills) / len(fills)
+                conn = init_db(config.db_path)
+                try:
+                    mark_entry(conn, signal_date, fill_price, sl_price)
+                finally:
+                    conn.close()
+
                 live_lines = ["\n** LIVE POSITIONS OPENED **"]
                 for f in fills:
                     live_lines.append(
@@ -201,7 +215,8 @@ async def run_friday_signal(
                             exchanges=[f.exchange for f in fills],
                             total_notional=sum(f.qty * f.avg_price for f in fills))
             else:
-                live_msg = "\n** LIVE: ALL EXCHANGES FAILED TO OPEN **"
+                # No fills — leave status 'pending' so the retry crons re-attempt.
+                live_msg = "\n** LIVE: ALL EXCHANGES FAILED TO OPEN — left PENDING for retry **"
                 logger.error("weekend_live_all_failed")
 
     # Format and send alert
