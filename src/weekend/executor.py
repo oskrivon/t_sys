@@ -198,18 +198,24 @@ def close_position(exchange_id: str, symbol: str, direction: str) -> Optional[Fi
             logger.info("weekend_no_position", exchange=exchange_id, symbol=symbol)
             return None
 
-        # Cancel any conditional/SL orders
-        try:
-            open_orders = exchange.fetch_open_orders(symbol)
-            for o in open_orders:
-                try:
-                    exchange.cancel_order(o["id"], symbol)
-                    logger.info("weekend_sl_cancelled", exchange=exchange_id,
-                                order_id=o["id"])
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        # Cancel any open SL orders — both regular and conditional/algo buckets.
+        # Binance keeps STOP_MARKET reduceOnly orders in a separate "conditional"
+        # bucket invisible to a plain fetch_open_orders; without the stop=True
+        # query the SL is orphaned after close and can fire on a later position.
+        orders_to_cancel: dict[str, dict] = {}
+        for params in ({}, {"stop": True}):
+            try:
+                for o in exchange.fetch_open_orders(symbol, params=params):
+                    orders_to_cancel[o["id"]] = params
+            except Exception:
+                pass
+        for oid, params in orders_to_cancel.items():
+            try:
+                exchange.cancel_order(oid, symbol, params=params)
+                logger.info("weekend_sl_cancelled", exchange=exchange_id,
+                            order_id=oid)
+            except Exception:
+                pass
 
         # Market close
         order = exchange.create_order(
