@@ -304,6 +304,17 @@ class TestFundingUpdateHandler:
 class TestSignalEmission:
     """Test that _schedule_entry emits a properly formed signal."""
 
+    @pytest.fixture(autouse=True)
+    def _disable_weekend_guard(self):
+        # _schedule_entry skips entry during the weekend window (Fri 21:00 -
+        # Sun 23:00 UTC), evaluated against the real wall clock. Without this
+        # these tests pass on weekdays and fail on weekends. Force the guard off
+        # so the signal-emission path is exercised deterministically.
+        with patch.object(
+            FundingCaptureStrategy, "_is_weekend_window", return_value=False
+        ):
+            yield
+
     async def test_signal_emitted_with_correct_metadata(self, strategy, collecting_bus):
         # next_funding_time 1s in future so all sleeps are negative → skipped
         nft = _now_ms() + 1_000
