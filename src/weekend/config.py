@@ -115,6 +115,12 @@ DEFAULT_PREDICTORS = [
 
 DEFAULT_CONFIG = WeekendConfig(
     predictors=DEFAULT_PREDICTORS,
-    majority_threshold=3,
+    # 4-of-5 agreement (was 3). The validation that confirmed the edge used a
+    # net-margin rule (|vote_sum|>=3 == 4-of-5); production had drifted to a
+    # loose 3-of-5 count majority. Re-validation 2026-06-14
+    # (scripts/research/weekend_threshold_revalidation.py, 6/6 robustness PASS):
+    # 4-of-5 Sharpe 2.10 [CI 1.46..2.79] vs 3-of-5 Sharpe 0.79 [CI -0.04..1.54];
+    # the 150 marginal 3-of-5 trades had no edge (total -22.6%, Sharpe -0.41).
+    majority_threshold=4,
     stop_loss_pct=0.05,  # catastrophe-only SL (was 0.0075)
 )

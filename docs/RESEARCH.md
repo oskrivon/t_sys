@@ -2,6 +2,7 @@
 
 ## Архив
 
+- [Weekend Threshold Regression + 2 dead-end фикса](archive/WEEKEND_THRESHOLD_RESEARCH.md) — **FIX + 2 DEAD ENDS**. Live 1/7 (луз-стрик 6) — причина не в сигнале: прод дрейфанул на распущенный порог **3-of-5** (count), валидация требовала **4-of-5** (net). Ре-валидация 6/6: 4of5 Sharpe 2.10 [CI 1.46-2.79] vs 3of5 0.79 [CI −0.04-1.54]; 150 маржинальных 3of5-сделок дают total −22.6%. Порог исправлен 3→4. Отклонены: расширение окна на дни (с SL строго хуже) и гейт corr>0.55 (эффект перевёрнут — эдж сильнее при НИЗКОЙ корреляции).
 - [News Event Trading: Strategy/Saylor BTC Sale](archive/NEWS_EVENT_TRADING_RESEARCH.md) — **NOT ACTIONABLE**. Strategy продал 32 BTC (1 июня), BTC -6% за 4 дня. Наш weekend шорт поймал хвост (entry $61.8k, но reversal в вс → -1.62%). Систематизировать нельзя: N=2 за всю историю, latency vs algo-фонды, on-chain не видно (OTC/малый объём).
 - [Spread Trading: Calendar, Basis, Cross-Asset](archive/SPREAD_TRADING_RESEARCH.md) — **DEAD END (все 4 типа)**. Calendar: funding=basis, ликвидность quarterly 0.1% от perps. Dynamic basis: MM держат <1 bps. Cross-asset: ни одна пара не коинтегрирована стабильно (BTC/ETH 33% окон). De Prado spread approach не применим к крипте из-за perpetual funding mechanism.
 - [Weekend Exit Timing](archive/WEEKEND_EXIT_TIMING_RESEARCH.md) — **DEAD END**. Hourly profile, conditional exit (Sat DOWN), TP, trailing stops, L/S split exit. Лучший кандидат L=Mon04/S=Sun23 (Sharpe +0.25) не прошёл robustness: paired t-test p=0.13, bootstrap 95% CI содержит 0, underpowered (71/234 trades). Keep Sun 23:00.
@@ -19,7 +20,7 @@
 
 - **V-Bottom Dip Buying** — **PAPER TRADING**. BTC drop 3%/24h + NATR high + NQ T-1 not down → buy, hold 24h. Honest CAGR +25%/yr, Sharpe 1.05, MaxDD -24%. Smart beta (BTC long timing), not alpha. Look-ahead bias found in original NQ filter (+timestamp shift test added to scorecard). [Детали](V_BOTTOM_RESEARCH.md)
 - **Weekend SL + V-Bottom Re-Entry** — **SUPERSEDED**. Was: SL 0.75% + bounce re-entry, Sharpe 2.09. Now: no SL (catastrophe 5% only), compound CAGR +118% vs +73% (SL 2.5%), p=0.006. Re-entry disabled. [Детали](WEEKEND_SL_REENTRY_RESEARCH.md)
-- **Weekend Effect: Cross-Asset -> BTC** — **LIVE (no SL)**. 5-predictor ensemble (KWEB, EWJ, XLK, XLE, USDJPY), majority 3/5. Compound Sharpe 2.22, CAGR +118%/yr @ 3x. Catastrophe SL 5% only. ~21 trades/yr (41% weekends). MFE analysis proves any trailing/BE hurts. [Детали](WEEKEND_EFFECT_RESEARCH.md)
+- **Weekend Effect: Cross-Asset -> BTC** — **LIVE**. 5-predictor ensemble (KWEB, EWJ, XLK, XLE, USDJPY), **majority 4/5** (исправлено с 3/5 2026-06-14 — порог дрейфанул от валидации, см. [Threshold Research](archive/WEEKEND_THRESHOLD_RESEARCH.md)). Exit Sun 12:00 UTC, catastrophe SL 5%. На свежем периоде (2021-2026) 4of5 Sharpe ~2.1; на 8.6 годах хедлайн 2.82 (эдж сжался). MFE analysis proves any trailing/BE hurts. [Детали](WEEKEND_EFFECT_RESEARCH.md)
 - **Calendar Events: FOMC + Q-Expiry** — **CONFIRMED OOS**. Pre-FOMC LONG (WR 70%, 8/yr) + Post-Q-expiry SHORT (WR 58%, 4/yr). Combined Sharpe_net 1.06, ~14% annual. Zero overlap с weekend signal.
 
 - **Funding Capture HF** — **ACTIVE**. Live trading engine на Bybit. [Детали](FUNDING_CAPTURE_RESEARCH.md)
