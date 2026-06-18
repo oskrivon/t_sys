@@ -139,17 +139,20 @@ def find_signals(book_rows, by_price, min_notional, absorb_frac):
 
 
 def simulate(signals, ts_sorted, px_sorted, tp, sl, entry_delay_ms, horizon_ms,
-             time_exit_ms=None):
+             time_exit_ms=None, reverse=False):
     """Realize each signal's PnL. Returns (signal, label, realized_pnl).
 
     time_exit_ms set -> hold a fixed time then exit at market (no TP/SL).
     Otherwise TP/SL on the tape; positions that hit neither within horizon are
     marked to market at the last price in the horizon (their backtest closes
     unhit positions at end of day, so 'open' must NOT be dropped as zero).
+    reverse=True -> trade WITH the absorber (fade the break) instead of through.
     """
     out = []
     for s in signals:
         direction = -1 if s.side == "bid" else 1  # bid eaten -> short
+        if reverse:
+            direction = -direction
         i = bisect_left(ts_sorted, s.end_ts + entry_delay_ms)
         if i >= len(ts_sorted):
             continue
