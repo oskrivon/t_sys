@@ -77,6 +77,15 @@ src/
 │   ├── chart_generator.py   # ✅ Candlestick chart PNG
 │   ├── analyzer/            # 🔲 LLM анализ ситуаций
 │   └── monitor/             # 🔲 Автоматический мониторинг
+├── icebreaker/              # ✅ Wall-eating research (market-data only, не в движке)
+│   ├── universe.py          # ✅ Cross-exchange perp overlap selection
+│   ├── book.py              # ✅ L2 book reconstruction (snapshot+delta, walls)
+│   ├── recorder.py          # ✅ Partitioned zstd parquet writer
+│   ├── parse_bybit.py       # ✅ Bybit WS orderbook/trade parsers
+│   ├── collector.py         # ✅ parse→book→recorder feed
+│   ├── live_bybit.py        # ✅ Live Bybit WS client (subscribe/reconnect)
+│   ├── bybit_archive.py     # ✅ Free Bybit archive → unified parquet
+│   └── watchlist.py         # ✅ Runtime-editable symbol config
 └── api/                     # Интерфейсы
     ├── rest/                # 🔲 FastAPI endpoints
     ├── telegram/            # ✅ Telegram bot (bidirectional)
