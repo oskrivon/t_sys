@@ -14,6 +14,11 @@ class Exchange(str, Enum):
     BINANCE = "binance"
     BYBIT = "bybit"
     OKX = "okx"
+    # Tier-3 venues — used only by the icebreaker (wall-eating) data collector.
+    # Market-data only; not wired into trading/execution paths. Values are ccxt ids.
+    KUCOIN = "kucoinfutures"
+    MEXC = "mexc"
+    BITGET = "bitget"
 
 
 class OrderSide(str, Enum):
