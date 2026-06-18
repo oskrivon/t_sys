@@ -23,6 +23,7 @@
 - **Weekend Effect: Cross-Asset -> BTC** — **LIVE**. 5-predictor ensemble (KWEB, EWJ, XLK, XLE, USDJPY), **majority 4/5** (исправлено с 3/5 2026-06-14 — порог дрейфанул от валидации, см. [Threshold Research](archive/WEEKEND_THRESHOLD_RESEARCH.md)). Exit Sun 12:00 UTC, catastrophe SL 5%. На свежем периоде (2021-2026) 4of5 Sharpe ~2.1; на 8.6 годах хедлайн 2.82 (эдж сжался). MFE analysis proves any trailing/BE hurts. [Детали](WEEKEND_EFFECT_RESEARCH.md)
 - **Calendar Events: FOMC + Q-Expiry** — **CONFIRMED OOS**. Pre-FOMC LONG (WR 70%, 8/yr) + Post-Q-expiry SHORT (WR 58%, 4/yr). Combined Sharpe_net 1.06, ~14% annual. Zero overlap с weekend signal.
 
+- **Icebreaker (Wall-Eating)** — **ПОД ВОПРОСОМ, идёт месячный тест**. Их бэктест +10.75% брутто, но после комиссий −18% (breakeven 0.041%/сделку vs taker 0.11%), эдж в 2 монетах. $0-проба на free Bybit OB: порог $100k недостижим на дешёвых монетах; исчезновение стены ≈ отмена, не поглощение (TAO 3958 pulled / 5 eaten); пробои убыточны. Faithful-тест март-2026 (TAO/SIREN/ZEC/SUI, абсорбция через трейды) идёт. [Детали](ICEBREAKER_RESEARCH.md)
 - **Funding Capture HF** — **ACTIVE**. Live trading engine на Bybit. [Детали](FUNDING_CAPTURE_RESEARCH.md)
 - **Miro Strategy + Claude Vision** — **MAIN TRACK**. Screener + Claude Vision filter. Score>=7 → 75% WR на 36 trades (100 sample)
 - [Арбитраж — финальный отчёт](../data/reports/arbitrage_final_report.html) — DEAD: 6 треков проверено, все мертвы
