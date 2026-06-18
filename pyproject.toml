@@ -27,6 +27,7 @@ dependencies = [
     "redis>=5.0.0",
     "pandas>=2.1.0",
     "numpy>=1.26.0",
+    "pyarrow>=14.0.0",
 
     # API
     "fastapi>=0.108.0",
