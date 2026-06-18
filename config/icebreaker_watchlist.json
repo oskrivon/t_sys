@@ -1,0 +1,283 @@
+{
+  "_meta": {
+    "execution_exchange": "bybit",
+    "detect_exchanges": [
+      "mexc",
+      "kucoinfutures"
+    ],
+    "min_volume_usd": 1000000.0,
+    "max_volume_usd": 50000000.0
+  },
+  "symbols": {
+    "STABLE": {
+      "enabled": true,
+      "execution": {
+        "bybit": "STABLE/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "STABLE/USDT:USDT"
+      }
+    },
+    "BAN": {
+      "enabled": true,
+      "execution": {
+        "bybit": "BAN/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "BAN/USDT:USDT"
+      }
+    },
+    "INIT": {
+      "enabled": true,
+      "execution": {
+        "bybit": "INIT/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "INIT/USDT:USDT"
+      }
+    },
+    "KERNEL": {
+      "enabled": true,
+      "execution": {
+        "bybit": "KERNEL/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "KERNEL/USDT:USDT"
+      }
+    },
+    "ROSE": {
+      "enabled": true,
+      "execution": {
+        "bybit": "ROSE/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "ROSE/USDT:USDT"
+      }
+    },
+    "ZORA": {
+      "enabled": true,
+      "execution": {
+        "bybit": "ZORA/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "ZORA/USDT:USDT"
+      }
+    },
+    "PARTI": {
+      "enabled": true,
+      "execution": {
+        "bybit": "PARTI/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "PARTI/USDT:USDT"
+      }
+    },
+    "SUSHI": {
+      "enabled": true,
+      "execution": {
+        "bybit": "SUSHI/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "SUSHI/USDT:USDT"
+      }
+    },
+    "ESP": {
+      "enabled": true,
+      "execution": {
+        "bybit": "ESP/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "ESP/USDT:USDT"
+      }
+    },
+    "PHA": {
+      "enabled": true,
+      "execution": {
+        "bybit": "PHA/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "PHA/USDT:USDT"
+      }
+    },
+    "SOON": {
+      "enabled": true,
+      "execution": {
+        "bybit": "SOON/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "SOON/USDT:USDT"
+      }
+    },
+    "WCT": {
+      "enabled": true,
+      "execution": {
+        "bybit": "WCT/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "WCT/USDT:USDT"
+      }
+    },
+    "SPY": {
+      "enabled": true,
+      "execution": {
+        "bybit": "SPY/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "SPY/USDT:USDT"
+      }
+    },
+    "HEI": {
+      "enabled": true,
+      "execution": {
+        "bybit": "HEI/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "HEI/USDT:USDT"
+      }
+    },
+    "BEL": {
+      "enabled": true,
+      "execution": {
+        "bybit": "BEL/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "BEL/USDT:USDT"
+      }
+    },
+    "ENSO": {
+      "enabled": true,
+      "execution": {
+        "bybit": "ENSO/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "ENSO/USDT:USDT"
+      }
+    },
+    "ELSA": {
+      "enabled": true,
+      "execution": {
+        "bybit": "ELSA/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "ELSA/USDT:USDT"
+      }
+    },
+    "LINEA": {
+      "enabled": true,
+      "execution": {
+        "bybit": "LINEA/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "LINEA/USDT:USDT"
+      }
+    },
+    "CFX": {
+      "enabled": true,
+      "execution": {
+        "bybit": "CFX/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "CFX/USDT:USDT"
+      }
+    },
+    "ROBO": {
+      "enabled": true,
+      "execution": {
+        "bybit": "ROBO/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "ROBO/USDT:USDT"
+      }
+    },
+    "NIGHT": {
+      "enabled": true,
+      "execution": {
+        "bybit": "NIGHT/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "NIGHT/USDT:USDT"
+      }
+    },
+    "BOME": {
+      "enabled": true,
+      "execution": {
+        "bybit": "BOME/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "BOME/USDT:USDT"
+      }
+    },
+    "TSTBSC": {
+      "enabled": true,
+      "execution": {
+        "bybit": "TSTBSC/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "TSTBSC/USDT:USDT"
+      }
+    },
+    "ME": {
+      "enabled": true,
+      "execution": {
+        "bybit": "ME/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "ME/USDT:USDT"
+      }
+    },
+    "GUN": {
+      "enabled": true,
+      "execution": {
+        "bybit": "GUN/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "GUN/USDT:USDT"
+      }
+    },
+    "HOLO": {
+      "enabled": true,
+      "execution": {
+        "bybit": "HOLO/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "HOLO/USDT:USDT"
+      }
+    },
+    "WHITEWHALE": {
+      "enabled": true,
+      "execution": {
+        "bybit": "WHITEWHALE/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "WHITEWHALE/USDT:USDT"
+      }
+    },
+    "JCT": {
+      "enabled": true,
+      "execution": {
+        "bybit": "JCT/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "JCT/USDT:USDT"
+      }
+    },
+    "IREN": {
+      "enabled": true,
+      "execution": {
+        "bybit": "IREN/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "IREN/USDT:USDT"
+      }
+    },
+    "0G": {
+      "enabled": true,
+      "execution": {
+        "bybit": "0G/USDT:USDT"
+      },
+      "detect": {
+        "kucoinfutures": "0G/USDT:USDT"
+      }
+    }
+  }
+}
