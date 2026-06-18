@@ -5,6 +5,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 # load the script module (scripts/ isn't a package)
 _spec = importlib.util.spec_from_file_location(
     "icebreaker_signal_backtest",
@@ -83,3 +85,27 @@ def test_simulate_sl_long():
     res = sbt.simulate([sig], ts, px, tp=0.005, sl=0.0015,
                        entry_delay_ms=200, horizon_ms=60_000)
     assert res[0][1] == "sl"
+    assert res[0][2] < 0   # realized pnl negative
+
+
+def test_simulate_open_marked_to_market():
+    """A position that hits neither TP nor SL is realized at horizon price."""
+    sig = sbt.Signal("ask", 100.0, 1500.0, 1600.0, 1000, 2000)  # LONG
+    ts = [2200, 2300, 2400]
+    px = [100.0, 100.2, 100.3]  # never hits TP(100.5) or SL(99.85)
+    res = sbt.simulate([sig], ts, px, tp=0.005, sl=0.0015,
+                       entry_delay_ms=200, horizon_ms=60_000)
+    assert res[0][1] == "open"
+    assert res[0][2] == pytest.approx((100.3 - 100.0) / 100.0)  # MTM, not zero
+
+
+def test_simulate_time_exit():
+    """Fixed-time exit ignores TP/SL and exits at the held-time price."""
+    sig = sbt.Signal("bid", 100.0, 1500.0, 1600.0, 1000, 2000)  # SHORT
+    ts = [2200, 2300, 50_000]
+    px = [100.0, 99.0, 98.0]  # short, price falls -> profit
+    res = sbt.simulate([sig], ts, px, tp=0.005, sl=0.0015,
+                       entry_delay_ms=200, horizon_ms=60_000, time_exit_ms=30_000)
+    assert res[0][1] == "time"
+    # exits ~30s after entry (ts 2200+30000=32200 -> idx for 50_000)... nearest >=
+    assert res[0][2] > 0   # short profited as price fell

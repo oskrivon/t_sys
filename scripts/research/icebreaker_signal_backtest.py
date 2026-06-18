@@ -21,7 +21,7 @@ from __future__ import annotations
 import argparse
 import sys
 from bisect import bisect_left, bisect_right
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -138,7 +138,15 @@ def find_signals(book_rows, by_price, min_notional, absorb_frac):
     return signals
 
 
-def simulate(signals, ts_sorted, px_sorted, tp, sl, entry_delay_ms, horizon_ms):
+def simulate(signals, ts_sorted, px_sorted, tp, sl, entry_delay_ms, horizon_ms,
+             time_exit_ms=None):
+    """Realize each signal's PnL. Returns (signal, label, realized_pnl).
+
+    time_exit_ms set -> hold a fixed time then exit at market (no TP/SL).
+    Otherwise TP/SL on the tape; positions that hit neither within horizon are
+    marked to market at the last price in the horizon (their backtest closes
+    unhit positions at end of day, so 'open' must NOT be dropped as zero).
+    """
     out = []
     for s in signals:
         direction = -1 if s.side == "bid" else 1  # bid eaten -> short
@@ -146,20 +154,33 @@ def simulate(signals, ts_sorted, px_sorted, tp, sl, entry_delay_ms, horizon_ms):
         if i >= len(ts_sorted):
             continue
         entry = px_sorted[i]
+
+        if time_exit_ms is not None:
+            j = min(bisect_left(ts_sorted, s.end_ts + entry_delay_ms + time_exit_ms),
+                    len(ts_sorted) - 1)
+            pnl = direction * (px_sorted[j] - entry) / entry
+            out.append((s, "time", pnl))
+            continue
+
         tp_px = entry * (1 + direction * tp)
         sl_px = entry * (1 - direction * sl)
-        outcome, t_end = "open", s.end_ts + entry_delay_ms + horizon_ms
+        label, exit_px = "open", entry
+        t_end = s.end_ts + entry_delay_ms + horizon_ms
         j = i
         while j < len(ts_sorted) and ts_sorted[j] <= t_end:
             px = px_sorted[j]
             if direction == 1:
-                if px >= tp_px: outcome = "tp"; break
-                if px <= sl_px: outcome = "sl"; break
+                if px >= tp_px: label, exit_px = "tp", tp_px; break
+                if px <= sl_px: label, exit_px = "sl", sl_px; break
             else:
-                if px <= tp_px: outcome = "tp"; break
-                if px >= sl_px: outcome = "sl"; break
+                if px <= tp_px: label, exit_px = "tp", tp_px; break
+                if px >= sl_px: label, exit_px = "sl", sl_px; break
             j += 1
-        out.append((s, outcome))
+        if label == "open":
+            jj = max(min(bisect_right(ts_sorted, t_end) - 1, len(ts_sorted) - 1), i)
+            exit_px = px_sorted[jj]
+        pnl = direction * (exit_px - entry) / entry
+        out.append((s, label, pnl))
     return out
 
 
@@ -175,11 +196,13 @@ def main():
     p.add_argument("--sl", type=float, default=0.0015)
     p.add_argument("--entry-delay-ms", type=int, default=200)
     p.add_argument("--horizon-ms", type=int, default=60_000)
+    p.add_argument("--time-exit-ms", type=int, default=None,
+                   help="fixed-time exit (ms); overrides TP/SL")
     p.add_argument("--fee", type=float, default=0.0011)
     args = p.parse_args()
 
     all_results = []
-    per_symbol = defaultdict(lambda: [0, 0, 0])  # tp, sl, open
+    per_symbol = defaultdict(lambda: [0.0, 0])  # [sum_pnl, n]
     for symbol in args.symbols:
         for date in daterange(args.start, args.end):
             if not _parts(args.store, symbol, date, "book_diff"):
@@ -188,31 +211,30 @@ def main():
             book_iter = iter_book_diffs(args.store, symbol, date)
             sigs = find_signals(book_iter, by_price, args.min_notional, args.absorb_frac)
             res = simulate(sigs, ts_s, px_s, args.tp, args.sl,
-                           args.entry_delay_ms, args.horizon_ms)
-            for _, o in res:
-                idx = {"tp": 0, "sl": 1, "open": 2}[o]
-                per_symbol[symbol][idx] += 1
+                           args.entry_delay_ms, args.horizon_ms, args.time_exit_ms)
+            for _, _, pnl in res:
+                per_symbol[symbol][0] += pnl
+                per_symbol[symbol][1] += 1
             all_results.extend(res)
-            print(f"[{symbol} {date}] walls-absorbed={len(sigs)} "
-                  f"signals={len(res)}")
+            print(f"[{symbol} {date}] walls-absorbed={len(sigs)} signals={len(res)}")
 
     n = len(all_results)
-    tp = sum(1 for _, o in all_results if o == "tp")
-    sl = sum(1 for _, o in all_results if o == "sl")
-    op = n - tp - sl
-    gross = tp * args.tp - sl * args.sl
+    labels = Counter(o for _, o, _ in all_results)
+    gross = sum(pnl for _, _, pnl in all_results)
+    wins = sum(1 for _, _, pnl in all_results if pnl > 0)
     net = gross - n * args.fee
-    print("\n" + "=" * 60)
+    exit_desc = (f"time-exit {args.time_exit_ms/1000:.0f}s" if args.time_exit_ms
+                 else f"TP {args.tp:.2%}/SL {args.sl:.2%}")
+    print("\n" + "=" * 64)
     print(f"  ICEBREAKER FAITHFUL BACKTEST  (min_notional=${args.min_notional:,.0f}, "
-          f"absorb>={args.absorb_frac:.0%}, TP {args.tp:.2%}/SL {args.sl:.2%})")
-    print("=" * 60)
-    for sym, (a, b, c) in per_symbol.items():
-        tot = a + b + c
-        wr = a / (a + b) if (a + b) else 0
-        print(f"  {sym:12s} signals={tot:4d}  TP={a:3d} SL={b:3d} open={c:3d}  WR={wr:.0%}")
-    print(f"\n  TOTAL signals: {n}  (TP {tp}, SL {sl}, open {op})")
-    if tp + sl:
-        print(f"  hit-rate: {tp/(tp+sl):.1%}")
+          f"absorb>={args.absorb_frac:.0%}, {exit_desc})")
+    print("=" * 64)
+    for sym, (pnl_sum, cnt) in per_symbol.items():
+        net_sym = pnl_sum - cnt * args.fee
+        print(f"  {sym:12s} signals={cnt:4d}  gross={pnl_sum*100:+6.2f}%  "
+              f"net={net_sym*100:+6.2f}%")
+    print(f"\n  TOTAL signals: {n}  outcomes={dict(labels)}")
+    print(f"  win-rate (pnl>0): {wins/n:.1%}" if n else "  n/a")
     print(f"  gross PnL: {gross*100:+.2f}%")
     print(f"  net PnL (fee {args.fee:.2%}/trade): {net*100:+.2f}%  over {n} trades")
 
