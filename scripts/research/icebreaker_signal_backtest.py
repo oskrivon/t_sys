@@ -47,17 +47,21 @@ def _parts(store: Path, symbol: str, date: str, kind: str):
     return sorted(p.glob("part-*.parquet"))
 
 
-def load_book_diffs(store, symbol, date):
-    """Ordered (recv_ts_ns, update_id, kind, side, price, qty) rows."""
-    rows = []
+def iter_book_diffs(store, symbol, date):
+    """Yield ordered (exch_ts_ms, update_id, kind, side, price, qty) rows.
+
+    Streams part files one at a time — a day can be tens of millions of level
+    rows (SIREN ~35M/day), far too many to materialize in a list.
+    """
     for f in _parts(store, symbol, date, "book_diff"):
-        t = pq.read_table(f, columns=["recv_ts_ns", "exch_ts_ms", "update_id",
+        t = pq.read_table(f, columns=["exch_ts_ms", "update_id",
                                       "kind", "side", "price", "qty"])
         d = t.to_pydict()
+        ts, uid, kind, side, price, qty = (
+            d["exch_ts_ms"], d["update_id"], d["kind"],
+            d["side"], d["price"], d["qty"])
         for i in range(t.num_rows):
-            rows.append((d["exch_ts_ms"][i], d["update_id"][i], d["kind"][i],
-                         d["side"][i], d["price"][i], d["qty"][i]))
-    return rows
+            yield (ts[i], uid[i], kind[i], side[i], price[i], qty[i])
 
 
 def load_trades(store, symbol, date):
@@ -180,9 +184,9 @@ def main():
         for date in daterange(args.start, args.end):
             if not _parts(args.store, symbol, date, "book_diff"):
                 continue
-            book_rows = load_book_diffs(args.store, symbol, date)
             ts_s, px_s, by_price = load_trades(args.store, symbol, date)
-            sigs = find_signals(book_rows, by_price, args.min_notional, args.absorb_frac)
+            book_iter = iter_book_diffs(args.store, symbol, date)
+            sigs = find_signals(book_iter, by_price, args.min_notional, args.absorb_frac)
             res = simulate(sigs, ts_s, px_s, args.tp, args.sl,
                            args.entry_delay_ms, args.horizon_ms)
             for _, o in res:
