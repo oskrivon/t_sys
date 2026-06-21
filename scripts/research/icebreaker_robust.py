@@ -73,8 +73,8 @@ def render(bars, setup, mfe, mae, good, out_path, lookback):
                  f"score {setup.score:.1f}", color="#eee", fontsize=11)
     ax.text(0.01, 0.99,
             f"touches {d['touches']}  shelf {d.get('shelf',0):.1%}  air {d.get('air',0):.2f}  "
-            f"edge {d.get('edge_pos',0):.2f}  one_sided {setup.one_sided:.2f}  "
-            f"squeeze {d.get('squeeze_frac',0):.0%}  (purple dots = squeeze bars)",
+            f"edge {d.get('edge_pos',0):.2f}  pocD {d.get('poc_dist',0):.1f}  "
+            f"one_sided {setup.one_sided:.2f}  squeeze {d.get('squeeze_frac',0):.0%}",
             transform=ax.transAxes, va="top", color="#bbb", fontsize=8, family="monospace")
     ax.tick_params(colors="#888")
 
@@ -111,6 +111,8 @@ def main():
                    help="level must sit in extreme edge_band of the base range")
     p.add_argument("--min-vol-at-level", type=float, default=0.04,
                    help="volume floor at the level (reject thin extrema)")
+    p.add_argument("--min-poc-dist-atr", type=float, default=1.5,
+                   help="min distance (ATR) from the volume POC; reject magnets")
     p.add_argument("--no-squeeze", action="store_true", help="disable squeeze requirement")
     p.add_argument("--horizon-ms", type=int, default=900_000)
     p.add_argument("--good-mfe", type=float, default=0.01)
@@ -137,7 +139,8 @@ def main():
             min_touches=args.min_touches, one_sided_min=args.one_sided_min,
             min_score=args.min_score, require_squeeze=not args.no_squeeze,
             air_max=args.air_max, edge_band=args.edge_band,
-            min_vol_at_level=args.min_vol_at_level)
+            min_vol_at_level=args.min_vol_at_level,
+            min_poc_dist_atr=args.min_poc_dist_atr)
         kept = 0
         for s in setups:
             ts_close = bars[s.idx]["ts"] + args.bar_ms

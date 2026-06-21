@@ -257,7 +257,8 @@ def detect_setups(bars, *, lookback=480, base_bars=120, pivot_order=5,
                   atr_period=14, cluster_atr_mult=0.5, min_touches=3,
                   brk=0.0015, min_score=0.0, require_squeeze=True,
                   one_sided_min=0.75, near_atr=1.0, cooldown=30, vp_bins=120,
-                  air_max=0.6, edge_band=0.30, min_vol_at_level=0.04):
+                  air_max=0.6, edge_band=0.30, min_vol_at_level=0.04,
+                  min_poc_dist_atr=1.5):
     """Detect decisive breakouts of a HIGH-QUALITY level out of a squeezed base.
 
     Quality gates that fix the naive detector:
@@ -267,6 +268,10 @@ def detect_setups(bars, *, lookback=480, base_bars=120, pivot_order=5,
         (directional_air ≤ air_max) → rejects mid-range POC magnets
       * 'edge' gate: level sits in the extreme `edge_band` of the base range →
         rejects mid-range pivots in chop
+      * 'POC-distance' gate: level ≥ min_poc_dist_atr ATR from the volume POC →
+        a breakout level lives at the EDGE of the volume distribution, never at
+        its peak (the magnet). Catches mid-range magnets that the local edge/air
+        gates miss when the 120-bar base happens to sit on one side.
       * volume floor: vol_at_level ≥ min_vol_at_level → rejects thin extrema
       * level confirmed by volume profile + bounce + tightness (score)
       * one-sidedness on the recent `base_bars` only (not stale history)
@@ -293,6 +298,7 @@ def detect_setups(bars, *, lookback=480, base_bars=120, pivot_order=5,
                                        lo=l[i - lookback:i].min(),
                                        hi=h[i - lookback:i].max(), bins=vp_bins)
         clusters = cluster_pivots(piv, a[i] * cluster_atr_mult)
+        poc = float(centers[mass.argmax()]) if len(centers) and mass.sum() > 0 else None
         base_lo = i - base_bars
         base_closes = c[base_lo:i]
         base_low_px = float(l[base_lo:i].min())
@@ -322,6 +328,9 @@ def detect_setups(bars, *, lookback=480, base_bars=120, pivot_order=5,
                     continue
                 if side == "short" and pos > edge_band:
                     continue
+                # POC-distance gate: reject levels sitting on the volume magnet
+                if poc is not None and abs(L - poc) < min_poc_dist_atr * a[i]:
+                    continue
                 # air gate (#1): shelf on base side, void on run side
                 air = directional_air(centers, mass, L, side, band=near_atr * a[i])
                 if air > air_max:
@@ -339,6 +348,7 @@ def detect_setups(bars, *, lookback=480, base_bars=120, pivot_order=5,
                 det["air"] = round(air, 2)
                 det["edge_pos"] = round(pos, 2)
                 det["shelf"] = round(shelf, 3)
+                det["poc_dist"] = round(abs(L - poc) / a[i], 2) if poc is not None else None
                 cands.append(Setup(i, side, L, s, bool(sq[base_lo:i].any()),
                                    float(os), det))
             if cands:
