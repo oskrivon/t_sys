@@ -115,6 +115,60 @@ def volume_at(centers, mass, level, half_width):
     return float(mass[sel].sum() / mass.sum())
 
 
+def directional_air(centers, mass, level, side, band):
+    """Ratio of profile mass just BEYOND the level (breakout side) to mass just
+    INSIDE the base (other side), each within `band` price units of `level`.
+
+    A real breakout edge separates a volume shelf (base side) from a void (run
+    side). Lower ratio = emptier void beyond = better. Mid-range POC magnets have
+    volume on both sides → ratio ~1 → rejected. Returns +inf when the base side
+    is empty (no shelf → not an edge)."""
+    if len(centers) == 0 or mass.sum() <= 0:
+        return float("inf")
+    if side == "long":      # break UP: base below, void above
+        inside = (centers >= level - band) & (centers < level)
+        beyond = (centers > level) & (centers <= level + band)
+    else:                   # short, break DOWN: base above, void below
+        inside = (centers > level) & (centers <= level + band)
+        beyond = (centers >= level - band) & (centers < level)
+    mi = float(mass[inside].sum())
+    mb = float(mass[beyond].sum())
+    if mi <= 0:
+        return float("inf")
+    return mb / mi
+
+
+def base_shelf_frac(centers, mass, level, side, band):
+    """Fraction of total profile mass forming the base-side shelf within `band`
+    of `level` — the wall the breakout leans on. Closes cluster just inside the
+    edge, so this (directional) reads the shelf where a symmetric ±band at the
+    exact edge price would read empty."""
+    if len(centers) == 0 or mass.sum() <= 0:
+        return 0.0
+    if side == "long":      # base below the level
+        inside = (centers >= level - band) & (centers < level)
+    else:                   # base above the level
+        inside = (centers > level) & (centers <= level + band)
+    return float(mass[inside].sum() / mass.sum())
+
+
+def cluster_level_price(cluster, side):
+    """Edge price of a cluster, anchored to the actual touches of the relevant
+    kind (support=lows for short, resistance=highs for long). Median is robust to
+    the odd opposite-kind pivot that drags the plain cluster mean off the edge."""
+    kind = "low" if side == "short" else "high"
+    same = [px for _, px, k in cluster["members"] if k == kind]
+    use = same if len(same) >= 2 else [px for _, px, _ in cluster["members"]]
+    return float(np.median(use))
+
+
+def range_position(level, lo_px, hi_px):
+    """Where `level` sits within [lo_px, hi_px]: 0 = bottom, 1 = top."""
+    if hi_px <= lo_px:
+        return 0.5
+    return float((level - lo_px) / (hi_px - lo_px))
+
+
 # ----------------------------------------------------------------------------
 # Pivots + clustering + scoring
 # ----------------------------------------------------------------------------
@@ -153,12 +207,14 @@ def cluster_pivots(pivots, proximity):
     return out
 
 
-def score_level(cluster, high, low, close, eval_idx, centers, mass, atr_val):
+def score_level(cluster, high, low, close, eval_idx, centers, mass, atr_val,
+                level=None):
     """Composite quality score for a level as of eval_idx (causal).
 
     Combines: touches, recency, bounce strength (avg reversal after each touch),
-    tightness, and volume-at-level. Returns (score, detail dict)."""
-    L = cluster["price"]
+    tightness, and volume-at-level. Returns (score, detail dict). `level` lets the
+    caller score the side-anchored edge price instead of the cluster mean."""
+    L = cluster["price"] if level is None else level
     n = cluster["n"]
     # recency: 1.0 if touched recently, decays over ~lookback
     age = eval_idx - cluster["last_idx"]
@@ -200,13 +256,20 @@ class Setup:
 def detect_setups(bars, *, lookback=480, base_bars=120, pivot_order=5,
                   atr_period=14, cluster_atr_mult=0.5, min_touches=3,
                   brk=0.0015, min_score=0.0, require_squeeze=True,
-                  one_sided_min=0.75, near_atr=1.0, cooldown=30, vp_bins=120):
+                  one_sided_min=0.75, near_atr=1.0, cooldown=30, vp_bins=120,
+                  air_max=0.6, edge_band=0.30, min_vol_at_level=0.04):
     """Detect decisive breakouts of a HIGH-QUALITY level out of a squeezed base.
 
     Quality gates that fix the naive detector:
+      * level price is the side-anchored cluster EDGE (median of relevant-kind
+        touches), not the wandering cluster mean
+      * 'air' gate: a volume shelf on the base side and a void on the run side
+        (directional_air ≤ air_max) → rejects mid-range POC magnets
+      * 'edge' gate: level sits in the extreme `edge_band` of the base range →
+        rejects mid-range pivots in chop
+      * volume floor: vol_at_level ≥ min_vol_at_level → rejects thin extrema
       * level confirmed by volume profile + bounce + tightness (score)
-      * level is the BASE edge: one-sidedness measured on the recent `base_bars`
-        only (not stale history) → rejects mid-range pivots in chop (POPCAT bug)
+      * one-sidedness on the recent `base_bars` only (not stale history)
       * squeeze (BB-in-KC) active in the base → real coil, not random range
       * decisive close beyond the level
     """
@@ -232,13 +295,16 @@ def detect_setups(bars, *, lookback=480, base_bars=120, pivot_order=5,
         clusters = cluster_pivots(piv, a[i] * cluster_atr_mult)
         base_lo = i - base_bars
         base_closes = c[base_lo:i]
+        base_low_px = float(l[base_lo:i].min())
+        base_hi_px = float(h[base_lo:i].max())
         fired = False
         for side in ("long", "short"):
             cands = []
             for cl in clusters:
                 if cl["n"] < min_touches:
                     continue
-                L = cl["price"]
+                # level = side-anchored cluster edge, not the wandering mean (#2)
+                L = cluster_level_price(cl, side)
                 # near the level now, broke decisively this bar
                 broke = ((side == "long" and c[i - 1] <= L and c[i] > L * (1 + brk)) or
                          (side == "short" and c[i - 1] >= L and c[i] < L * (1 - brk)))
@@ -250,12 +316,29 @@ def detect_setups(bars, *, lookback=480, base_bars=120, pivot_order=5,
                       else np.mean(base_closes > L))
                 if os < one_sided_min:
                     continue
+                # edge gate (#3): level in the extreme edge_band of the base range
+                pos = range_position(L, base_low_px, base_hi_px)
+                if side == "long" and pos < 1.0 - edge_band:
+                    continue
+                if side == "short" and pos > edge_band:
+                    continue
+                # air gate (#1): shelf on base side, void on run side
+                air = directional_air(centers, mass, L, side, band=near_atr * a[i])
+                if air > air_max:
+                    continue
                 if require_squeeze and not sq[base_lo:i].any():
                     continue
-                s, det = score_level(cl, h, l, c, i, centers, mass, a[i])
+                # volume floor (#4): reject thin extrema with no base-side shelf
+                shelf = base_shelf_frac(centers, mass, L, side, band=near_atr * a[i])
+                if shelf < min_vol_at_level:
+                    continue
+                s, det = score_level(cl, h, l, c, i, centers, mass, a[i], level=L)
                 if s < min_score:
                     continue
                 det["squeeze_frac"] = round(float(sq[base_lo:i].mean()), 2)
+                det["air"] = round(air, 2)
+                det["edge_pos"] = round(pos, 2)
+                det["shelf"] = round(shelf, 3)
                 cands.append(Setup(i, side, L, s, bool(sq[base_lo:i].any()),
                                    float(os), det))
             if cands:

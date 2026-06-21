@@ -72,9 +72,9 @@ def render(bars, setup, mfe, mae, good, out_path, lookback):
     ax.set_title(f"{setup.side.upper()} {t}UTC [{verdict}]  MFE {mfe:.2%}/MAE {mae:.2%}  "
                  f"score {setup.score:.1f}", color="#eee", fontsize=11)
     ax.text(0.01, 0.99,
-            f"touches {d['touches']}  bounce {d['bounce']:.2%}  vol@lvl {d['vol_at_level']:.1%}  "
-            f"one_sided {setup.one_sided:.2f}  squeeze {d.get('squeeze_frac',0):.0%}  "
-            f"(purple dots = squeeze bars)",
+            f"touches {d['touches']}  shelf {d.get('shelf',0):.1%}  air {d.get('air',0):.2f}  "
+            f"edge {d.get('edge_pos',0):.2f}  one_sided {setup.one_sided:.2f}  "
+            f"squeeze {d.get('squeeze_frac',0):.0%}  (purple dots = squeeze bars)",
             transform=ax.transAxes, va="top", color="#bbb", fontsize=8, family="monospace")
     ax.tick_params(colors="#888")
 
@@ -105,6 +105,12 @@ def main():
     p.add_argument("--min-touches", type=int, default=3)
     p.add_argument("--one-sided-min", type=float, default=0.75)
     p.add_argument("--min-score", type=float, default=0.0)
+    p.add_argument("--air-max", type=float, default=0.6,
+                   help="max vol-beyond/vol-inside ratio (void on run side)")
+    p.add_argument("--edge-band", type=float, default=0.30,
+                   help="level must sit in extreme edge_band of the base range")
+    p.add_argument("--min-vol-at-level", type=float, default=0.04,
+                   help="volume floor at the level (reject thin extrema)")
     p.add_argument("--no-squeeze", action="store_true", help="disable squeeze requirement")
     p.add_argument("--horizon-ms", type=int, default=900_000)
     p.add_argument("--good-mfe", type=float, default=0.01)
@@ -129,7 +135,9 @@ def main():
         setups = rl.detect_setups(
             bars, lookback=args.lookback, base_bars=args.base_bars,
             min_touches=args.min_touches, one_sided_min=args.one_sided_min,
-            min_score=args.min_score, require_squeeze=not args.no_squeeze)
+            min_score=args.min_score, require_squeeze=not args.no_squeeze,
+            air_max=args.air_max, edge_band=args.edge_band,
+            min_vol_at_level=args.min_vol_at_level)
         kept = 0
         for s in setups:
             ts_close = bars[s.idx]["ts"] + args.bar_ms
