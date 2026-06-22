@@ -55,6 +55,8 @@ def main():
     p.add_argument("--brk", type=float, default=0.0015)
     p.add_argument("--good-mfe", type=float, default=0.01)
     p.add_argument("--dump", type=Path, default=None)
+    p.add_argument("--dump-all", type=Path, default=None,
+                   help="dump every setup tagged with prior_breaks (for combo filters)")
     args = p.parse_args()
 
     recs = []
@@ -125,6 +127,11 @@ def main():
             for r in fresh:
                 fo.write(json.dumps(r) + "\n")
         print(f"\n  dumped {len(fresh)} fresh setups -> {args.dump}")
+    if args.dump_all:
+        with open(args.dump_all, "w") as fo:
+            for r in tagged:
+                fo.write(json.dumps(r) + "\n")
+        print(f"  dumped {len(tagged)} tagged setups -> {args.dump_all}")
 
 
 if __name__ == "__main__":
