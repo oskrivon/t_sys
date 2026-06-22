@@ -1,0 +1,139 @@
+"""Exit-config sweep on gated breakout setups — one tape pass, many configs.
+
+icebreaker_exit_sim.py answers "is config X tradeable" but reloads the 389MB tape
+per run. To find the OPTIMAL exit we need a grid, so this walks each (symbol,date)
+tape ONCE and simulates every config on it, accumulating realized PnL/R.
+
+Reports, per config (sorted by meanR at maker): n, win%, meanR, mean/median net%,
+sum%, at taker AND maker fees, plus the per-coin sign-spread (how many of the 9
+coins are net-positive — robustness, not one-coin overfit).
+
+    python scripts/research/icebreaker_exit_sweep.py \
+        --store /root/trading/data/icebreaker_active \
+        --cache 'tmp/ib_gated_*.jsonl' --out tmp/ib_exit_sweep.txt
+"""
+from __future__ import annotations
+
+import argparse
+import glob
+import importlib.util
+import itertools
+import json
+import sys
+from collections import defaultdict
+from pathlib import Path
+
+import numpy as np
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+
+
+def _load(name, rel):
+    spec = importlib.util.spec_from_file_location(name, ROOT / rel)
+    m = importlib.util.module_from_spec(spec)
+    sys.modules[name] = m
+    spec.loader.exec_module(m)
+    return m
+
+
+mc = _load("icebreaker_micro", "scripts/research/icebreaker_micro.py")
+es = _load("icebreaker_exit_sim", "scripts/research/icebreaker_exit_sim.py")
+
+
+# grid axes (only the levers that matter for "can we be positive")
+BUFFERS = [0.001, 0.002, 0.004]        # stop distance behind the level
+TP1S = [0.004, 0.006, 0.010]           # first scale-out target
+TRAILS = [0.004, 0.008]                # giveback from peak on the runner
+HORIZONS = [900_000, 1_800_000]        # 15m / 30m hold
+F1 = 0.5                               # fraction taken at TP1
+
+
+def configs():
+    for buf, tp1, tr, hz in itertools.product(BUFFERS, TP1S, TRAILS, HORIZONS):
+        yield {"buffer": buf, "tp1": tp1, "f1": F1, "trail_giveback": tr,
+               "horizon_ms": hz, "fee_side": 0.0}   # fee applied later per-tag
+
+
+def cfg_name(c):
+    return (f"buf{c['buffer']*100:.1f} tp{c['tp1']*100:.1f} tr{c['trail_giveback']*100:.1f} "
+            f"h{c['horizon_ms']//60000}")
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--store", required=True)
+    p.add_argument("--cache", required=True, help="glob of per-coin gated dumps")
+    p.add_argument("--fee-taker", type=float, default=0.00055)
+    p.add_argument("--fee-maker", type=float, default=0.0002)
+    p.add_argument("--out", type=Path, default=None)
+    args = p.parse_args()
+
+    files = sorted(glob.glob(args.cache))
+    recs = []
+    for fp in files:
+        recs.extend(json.loads(l) for l in open(fp) if l.strip())
+    by_day = defaultdict(list)
+    for r in recs:
+        by_day[(r["symbol"], r["date"])].append(r)
+    cfgs = list(configs())
+    # results[ci] = list of (symbol, gross, fee_units, risk)
+    results = [[] for _ in cfgs]
+
+    store = Path(args.store)
+    for (sym, date), setups in sorted(by_day.items()):
+        t_ts, t_pr, _, _ = mc.load_trades_arr(store, sym, date)
+        if len(t_ts) == 0:
+            continue
+        for r in setups:
+            for ci, c in enumerate(cfgs):
+                res = es.simulate_exit(t_ts, t_pr, r["ts_close"], r["side"], r["level"], c)
+                if res:
+                    results[ci].append((sym, res["gross"], res["fee_units"], res["risk"]))
+
+    lines = []
+
+    def emit(s=""):
+        lines.append(s)
+        print(s, flush=True)
+
+    n_total = len(recs)
+    emit("=" * 104)
+    emit(f"  EXIT SWEEP  n_setups={n_total}  coins={len(set(r['symbol'] for r in recs))}  "
+         f"configs={len(cfgs)}  (f1={F1:.0%})")
+    emit("=" * 104)
+
+    for tag, fee in (("TAKER", args.fee_taker), ("MAKER", args.fee_maker)):
+        emit(f"\n  --- {tag}  ({fee*2:.2%} round-trip) ---  sorted by meanR")
+        emit(f"  {'config':28s} {'n':>5s} {'win%':>6s} {'meanR':>7s} {'meanNet%':>9s} "
+             f"{'medNet%':>8s} {'sum%':>7s} {'coins+':>7s}")
+        table = []
+        for ci, c in enumerate(cfgs):
+            rows = results[ci]
+            if not rows:
+                continue
+            nets = [g - fee * fu for _, g, fu, _ in rows]
+            Rs = [(g - fee * fu) / rk for _, g, fu, rk in rows if rk > 1e-9]
+            meanR = sum(Rs) / len(Rs) if Rs else float("nan")
+            n = len(nets)
+            win = sum(1 for x in nets if x > 0) / n
+            mean = sum(nets) / n
+            med = sorted(nets)[n // 2]
+            # per-coin net sum -> how many coins are positive
+            per = defaultdict(float)
+            for (sym, g, fu, _), net in zip(rows, nets):
+                per[sym] += net
+            coins_pos = sum(1 for v in per.values() if v > 0)
+            table.append((meanR, cfg_name(c), n, win, mean, med, sum(nets),
+                          coins_pos, len(per)))
+        for meanR, name, n, win, mean, med, tot, cp, nc in sorted(table, reverse=True):
+            emit(f"  {name:28s} {n:5d} {win:6.1%} {meanR:+7.2f} {mean*100:+9.3f} "
+                 f"{med*100:+8.3f} {tot*100:+7.1f} {cp:3d}/{nc:<3d}")
+
+    if args.out:
+        args.out.write_text("\n".join(lines))
+        emit(f"\n  wrote {args.out}")
+
+
+if __name__ == "__main__":
+    main()
