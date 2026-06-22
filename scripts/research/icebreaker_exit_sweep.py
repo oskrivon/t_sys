@@ -40,6 +40,56 @@ def _load(name, rel):
 mc = _load("icebreaker_micro", "scripts/research/icebreaker_micro.py")
 es = _load("icebreaker_exit_sim", "scripts/research/icebreaker_exit_sim.py")
 
+from bisect import bisect_left
+
+
+def simulate_ride(ts, px, ts0, side, level, cfg):
+    """Scalper 'de-risk then ride': take a small partial at +t1 -> move stop to BE,
+    then RIDE the remainder, exiting only when price retraces `gb_frac` of the OPEN
+    PROFIT from the peak (a percent-of-move trail that widens with the move, so big
+    breakouts are ridden and small ones exit near BE). Same return shape as
+    icebreaker_exit_sim.simulate_exit."""
+    i = bisect_left(ts, ts0)
+    if i >= len(ts):
+        return None
+    entry = float(px[i])
+    dirn = 1.0 if side == "long" else -1.0
+    stop0 = level * (1 - cfg["buffer"]) if side == "long" else level * (1 + cfg["buffer"])
+    risk = dirn * (entry - stop0) / entry
+    t1_px = entry * (1 + dirn * cfg["t1"])
+    f1, gbf = cfg["f1"], cfg["gb_frac"]
+    t_end = ts0 + cfg["horizon_ms"]
+
+    legs, remaining, partial_done, best = [], 1.0, False, entry
+    reason, j, last = "horizon", i, entry
+    while j < len(ts) and ts[j] <= t_end:
+        p = float(px[j]); last = p
+        if dirn * (p - best) > 0:
+            best = p
+        if partial_done:
+            # give back gb_frac of the open profit from the peak, never below BE.
+            # trail = best - gbf*(best-entry) is correct for BOTH sides (best sits on
+            # the favorable side, so best-entry carries the sign).
+            trail = best - gbf * (best - entry)
+            eff = max(trail, entry) if side == "long" else min(trail, entry)
+            if dirn * (p - eff) <= 0:
+                legs.append((remaining, eff)); remaining = 0.0; reason = "ride"; break
+        else:
+            if dirn * (p - stop0) <= 0:
+                legs.append((remaining, stop0)); remaining = 0.0; reason = "stop"; break
+            if dirn * (p - t1_px) >= 0:
+                legs.append((f1, t1_px)); remaining -= f1; partial_done = True; best = p
+        j += 1
+    if remaining > 1e-9:
+        legs.append((remaining, last))
+
+    gross = sum(g * dirn * (pp - entry) / entry for g, pp in legs)
+    fee_units = 1.0 + sum(g for g, _ in legs)
+    net_taker = gross - cfg["fee_side"] * fee_units
+    return {"gross": gross, "fee_units": fee_units, "risk": risk,
+            "R": (net_taker / risk) if risk > 1e-9 else float("nan"),
+            "reason": reason, "mfe": dirn * (best - entry) / entry}
+
 
 # grid axes (only the levers that matter for "can we be positive")
 BUFFERS = [0.001, 0.002, 0.004]        # stop distance behind the level
@@ -55,11 +105,24 @@ LR_TRAILS = [0.003, 0.005, 0.008, 0.012]
 LR_HORIZONS = [900_000, 1_800_000, 3_600_000]   # 15 / 30 / 60m
 
 
+# ride mode: small de-risk partial then ride, exiting on a % -of-open-profit retrace
+RIDE_BUFFERS = [0.002, 0.004]
+RIDE_T1 = [0.003, 0.005]          # partial target (de-risk to BE)
+RIDE_F1 = [0.3, 0.5]              # fraction taken at the partial
+RIDE_GBF = [0.3, 0.4, 0.5]        # give back this fraction of peak open-profit
+RIDE_HORIZONS = [1_800_000, 3_600_000, 7_200_000]   # 30 / 60 / 120m (ride needs room)
+
+
 def configs(mode):
     if mode == "letrun":
         for buf, tr, hz in itertools.product(LR_BUFFERS, LR_TRAILS, LR_HORIZONS):
             yield {"buffer": buf, "tp1": 0.0, "f1": 0.0, "trail_giveback": tr,
                    "horizon_ms": hz, "fee_side": 0.0}
+    elif mode == "ride":
+        for buf, t1, f1, gbf, hz in itertools.product(
+                RIDE_BUFFERS, RIDE_T1, RIDE_F1, RIDE_GBF, RIDE_HORIZONS):
+            yield {"buffer": buf, "t1": t1, "f1": f1, "gb_frac": gbf,
+                   "horizon_ms": hz, "fee_side": 0.0, "ride": True}
     else:
         for buf, tp1, tr, hz in itertools.product(BUFFERS, TP1S, TRAILS, HORIZONS):
             yield {"buffer": buf, "tp1": tp1, "f1": F1, "trail_giveback": tr,
@@ -67,6 +130,9 @@ def configs(mode):
 
 
 def cfg_name(c):
+    if c.get("ride"):
+        return (f"buf{c['buffer']*100:.1f} t1{c['t1']*100:.1f} f{c['f1']:.1f} "
+                f"gbf{c['gb_frac']:.1f} h{c['horizon_ms']//60000}")
     return (f"buf{c['buffer']*100:.1f} tp{c['tp1']*100:.1f} tr{c['trail_giveback']*100:.1f} "
             f"h{c['horizon_ms']//60000}")
 
@@ -77,7 +143,7 @@ def main():
     p.add_argument("--cache", required=True, help="glob of per-coin gated dumps")
     p.add_argument("--fee-taker", type=float, default=0.00055)
     p.add_argument("--fee-maker", type=float, default=0.0002)
-    p.add_argument("--mode", choices=["managed", "letrun"], default="managed")
+    p.add_argument("--mode", choices=["managed", "letrun", "ride"], default="managed")
     p.add_argument("--out", type=Path, default=None)
     args = p.parse_args()
 
@@ -97,9 +163,10 @@ def main():
         t_ts, t_pr, _, _ = mc.load_trades_arr(store, sym, date)
         if len(t_ts) == 0:
             continue
+        sim_fn = simulate_ride if args.mode == "ride" else es.simulate_exit
         for r in setups:
             for ci, c in enumerate(cfgs):
-                res = es.simulate_exit(t_ts, t_pr, r["ts_close"], r["side"], r["level"], c)
+                res = sim_fn(t_ts, t_pr, r["ts_close"], r["side"], r["level"], c)
                 if res:
                     results[ci].append((sym, res["gross"], res["fee_units"], res["risk"]))
 
