@@ -48,11 +48,22 @@ TRAILS = [0.004, 0.008]                # giveback from peak on the runner
 HORIZONS = [900_000, 1_800_000]        # 15m / 30m hold
 F1 = 0.5                               # fraction taken at TP1
 
+# let-it-run: no fixed TP, pure trailing stop from entry (tp1=0,f1=0 -> TP1 fires at
+# entry with zero size, then the whole position trails the peak). Wider horizons.
+LR_BUFFERS = [0.002, 0.004]
+LR_TRAILS = [0.003, 0.005, 0.008, 0.012]
+LR_HORIZONS = [900_000, 1_800_000, 3_600_000]   # 15 / 30 / 60m
 
-def configs():
-    for buf, tp1, tr, hz in itertools.product(BUFFERS, TP1S, TRAILS, HORIZONS):
-        yield {"buffer": buf, "tp1": tp1, "f1": F1, "trail_giveback": tr,
-               "horizon_ms": hz, "fee_side": 0.0}   # fee applied later per-tag
+
+def configs(mode):
+    if mode == "letrun":
+        for buf, tr, hz in itertools.product(LR_BUFFERS, LR_TRAILS, LR_HORIZONS):
+            yield {"buffer": buf, "tp1": 0.0, "f1": 0.0, "trail_giveback": tr,
+                   "horizon_ms": hz, "fee_side": 0.0}
+    else:
+        for buf, tp1, tr, hz in itertools.product(BUFFERS, TP1S, TRAILS, HORIZONS):
+            yield {"buffer": buf, "tp1": tp1, "f1": F1, "trail_giveback": tr,
+                   "horizon_ms": hz, "fee_side": 0.0}   # fee applied later per-tag
 
 
 def cfg_name(c):
@@ -66,6 +77,7 @@ def main():
     p.add_argument("--cache", required=True, help="glob of per-coin gated dumps")
     p.add_argument("--fee-taker", type=float, default=0.00055)
     p.add_argument("--fee-maker", type=float, default=0.0002)
+    p.add_argument("--mode", choices=["managed", "letrun"], default="managed")
     p.add_argument("--out", type=Path, default=None)
     args = p.parse_args()
 
@@ -76,7 +88,7 @@ def main():
     by_day = defaultdict(list)
     for r in recs:
         by_day[(r["symbol"], r["date"])].append(r)
-    cfgs = list(configs())
+    cfgs = list(configs(args.mode))
     # results[ci] = list of (symbol, gross, fee_units, risk)
     results = [[] for _ in cfgs]
 
