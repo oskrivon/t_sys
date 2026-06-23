@@ -50,17 +50,45 @@ EXIT_CFG = {"buffer": 0.001, "tp1": 0.006, "f1": 0.5, "trail_giveback": 0.004,
 
 
 def cross_trade(t_ts, t_pr, start_ts, side, level, window_ms, cfg):
-    """First tape cross of `level` at/after start_ts within window -> managed trade
-    from that taker fill. None if the level is never crossed in the window (no trade)."""
+    """First tape cross of `level` at/after start_ts within window -> (entry_idx,
+    managed-trade dict). None if the level is never crossed in the window."""
     i = bisect_left(t_ts, start_ts)
     end = start_ts + window_ms
     long = side == "long"
     while i < len(t_ts) and t_ts[i] <= end:
         p = float(t_pr[i])
         if (long and p >= level) or (not long and p <= level):
-            return mf.walk_exit(t_ts, t_pr, i, p, side, level, cfg)
+            return i, mf.walk_exit(t_ts, t_pr, i, p, side, level, cfg)
         i += 1
     return None
+
+
+def flow_features(t_ts, t_qty, t_sd, ci, side):
+    """Tape-flow features in windows strictly BEFORE the cross (no lookahead). All
+    directional: positive = aggressive flow WITH the break (buys for a long break,
+    sells for a short). The question they answer: does informed order-flow at the
+    touch separate the 19% real breaks from the 81% fakeout-pokes?"""
+    tc = int(t_ts[ci]); long = side == "long"
+    f = {}
+    for W in (2000, 5000, 15000):
+        j = bisect_left(t_ts, tc - W)
+        sd = t_sd[j:ci]; q = t_qty[j:ci]
+        if len(q) == 0:
+            f[f"ofi{W}"] = 0.0; f[f"dfrac{W}"] = 0.0; f[f"nrate{W}"] = 0.0; continue
+        bv = float(q[sd == 1].sum()); sv = float(q[sd == 0].sum()); tot = bv + sv + 1e-9
+        f[f"ofi{W}"] = (bv - sv) / tot if long else (sv - bv) / tot
+        f[f"dfrac{W}"] = (bv if long else sv) / tot
+        f[f"nrate{W}"] = len(q) / (W / 1000.0)
+    k = 30; j = max(0, ci - k)
+    sd = t_sd[j:ci]; q = t_qty[j:ci]
+    if len(q):
+        imb = float((np.where(sd == 1, 1.0, -1.0) * q).sum())
+        f["tib_imb"] = (imb if long else -imb) / (float(q.sum()) + 1e-9)
+        big = q[(sd == 1) if long else (sd == 0)]
+        f["burst"] = float(big.max() / (q.mean() + 1e-9)) if len(big) else 0.0
+    else:
+        f["tib_imb"] = 0.0; f["burst"] = 0.0
+    return f
 
 
 def to_rec(res, sym):
@@ -79,6 +107,7 @@ def main():
     p.add_argument("--window-bars", type=int, default=30, help="bars to wait for a cross")
     p.add_argument("--fee", type=float, default=0.00055)
     p.add_argument("--confirmed", action="store_true", help="also run confirmed setups (cross entry) for the no-fakeout baseline")
+    p.add_argument("--dump", type=Path, default=None, help="per-cross flow features + outcome (for flow-gate analysis)")
     p.add_argument("--tag", default="")
     args = p.parse_args()
 
@@ -90,40 +119,51 @@ def main():
     store = Path(args.store)
     window_ms = args.window_bars * args.bar_ms
 
-    armed_rows, conf_rows = [], []
+    armed_rows, conf_rows, dump_recs = [], [], []
     n_armed = n_trig = n_conf = 0
     for sym in symbols:
-        t_ts, t_pr, t_qty = [], [], []
+        t_ts, t_pr, t_qty, t_sd = [], [], [], []
         for date in sbt.daterange(args.start, args.end):
             if not sbt._parts(store, sym, date, "trades"):
                 continue
-            a, b, c, _ = mc.load_trades_arr(store, sym, date)
+            a, b, c, d = mc.load_trades_arr(store, sym, date)
             if len(a):
-                t_ts.append(a); t_pr.append(b); t_qty.append(c)
+                t_ts.append(a); t_pr.append(b); t_qty.append(c); t_sd.append(d)
         if not t_ts:
             print(f"  {sym}: no tape", flush=True); continue
-        t_ts = np.concatenate(t_ts); t_pr = np.concatenate(t_pr); t_qty = np.concatenate(t_qty)
+        t_ts = np.concatenate(t_ts); t_pr = np.concatenate(t_pr)
+        t_qty = np.concatenate(t_qty); t_sd = np.concatenate(t_sd)
         bars = mc.bars_np(t_ts, t_pr, t_qty, args.bar_ms)
 
         armed = rl.detect_setups(bars, arm_only=True)
-        st = 0
         for s in armed:
             n_armed += 1
             start = bars[s.idx]["ts"] + args.bar_ms        # arm at bar close, trigger after
-            res = cross_trade(t_ts, t_pr, start, s.side, s.level, window_ms, EXIT_CFG)
-            if res:
+            hit = cross_trade(t_ts, t_pr, start, s.side, s.level, window_ms, EXIT_CFG)
+            if hit:
+                ci, res = hit
                 n_trig += 1; armed_rows.append(to_rec(res, sym))
+                if args.dump is not None:
+                    rec = to_rec(res, sym)
+                    rec["net"] = res["gross"] - args.fee * (1.0 + res["exit_units"])
+                    rec.update(flow_features(t_ts, t_qty, t_sd, ci, s.side))
+                    dump_recs.append(rec)
         if args.confirmed:
             conf = rl.detect_setups(bars)                  # default = close-confirmed
             for s in conf:
                 n_conf += 1
                 start = bars[s.idx]["ts"]                  # cross inside the break candle
-                res = cross_trade(t_ts, t_pr, start, s.side, s.level, args.bar_ms, EXIT_CFG)
-                if res:
-                    conf_rows.append(to_rec(res, sym))
+                hit = cross_trade(t_ts, t_pr, start, s.side, s.level, args.bar_ms, EXIT_CFG)
+                if hit:
+                    conf_rows.append(to_rec(hit[1], sym))
         print(f"  {sym}: armed={len(armed)} triggered={sum(1 for r in armed_rows if r['symbol']==sym)}"
               + (f" confirmed={sum(1 for r in conf_rows if r['symbol']==sym)}" if args.confirmed else ""),
               flush=True)
+    if args.dump is not None and dump_recs:
+        with open(args.dump, "w") as fo:
+            for r in dump_recs:
+                fo.write(json.dumps(r) + "\n")
+        print(f"  dumped {len(dump_recs)} cross-trades+flow -> {args.dump}", flush=True)
 
     print("\n" + "#" * 90)
     print(f"  LEVEL-CROSS (honest, fakeouts included)  {args.tag}  symbols={len(symbols)}  "
