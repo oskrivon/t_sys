@@ -252,13 +252,21 @@ def main():
         recs = [json.loads(l) for l in open(args.cache) if l.strip()]
         if args.limit and len(recs) > args.limit:
             random.seed(args.seed); recs = random.sample(recs, args.limit)
+        # resume: load already-scored keys from an existing dump (survives reboots)
+        scored = []
+        seen = set()
+        if args.dump.exists():
+            scored = [json.loads(l) for l in open(args.dump) if l.strip()]
+            seen = {(r["symbol"], r["ts_close"], r["side"]) for r in scored}
+            print(f"  resume: {len(seen)} already scored in {args.dump}", flush=True)
         by_day = defaultdict(list)
         for r in recs:
-            by_day[(r["symbol"], r["date"])].append(r)
+            if (r["symbol"], r["ts_close"], r["side"]) not in seen:
+                by_day[(r["symbol"], r["date"])].append(r)
         args.charts.mkdir(parents=True, exist_ok=True)
         store = Path(args.store)
-        scored = []
         done = 0
+        fo = open(args.dump, "a")        # append + flush each row -> crash/reboot safe
         for (sym, date), setups in sorted(by_day.items()):
             t_ts, t_pr, t_qty, _ = mc.load_trades_arr(store, sym, date)
             if len(t_ts) == 0:
@@ -274,18 +282,18 @@ def main():
                 vj = vision_judge(png_path.read_bytes(), r["side"], api_key, args.model)
                 if vj is None:
                     continue
-                scored.append({"symbol": sym, "date": date, "side": r["side"],
-                               "ts_close": r["ts_close"], "level": r["level"],
-                               "mfe": r["mfe"], "gross": ex["gross"],
-                               "fee_units": ex["fee_units"], "reason_exit": ex["reason"],
-                               "vscore": vj["score"], "vdecision": vj["decision"],
-                               "vreason": vj["reason"]})
+                rec = {"symbol": sym, "date": date, "side": r["side"],
+                       "ts_close": r["ts_close"], "level": r["level"],
+                       "mfe": r["mfe"], "gross": ex["gross"],
+                       "fee_units": ex["fee_units"], "reason_exit": ex["reason"],
+                       "vscore": vj["score"], "vdecision": vj["decision"],
+                       "vreason": vj["reason"]}
+                scored.append(rec)
+                fo.write(json.dumps(rec) + "\n"); fo.flush()
                 done += 1
                 if done % 10 == 0:
-                    print(f"  scored {done}...", flush=True)
-        with open(args.dump, "w") as fo:
-            for r in scored:
-                fo.write(json.dumps(r) + "\n")
+                    print(f"  scored {done} (+{len(seen)} resumed)...", flush=True)
+        fo.close()
         print(f"  dumped {len(scored)} -> {args.dump}", flush=True)
 
     # ---- analysis ----------------------------------------------------------
