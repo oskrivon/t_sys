@@ -2,6 +2,14 @@
 
 ## Лог
 
+### 2026-06-23 — Icebreaker Фаза 2: level-cross entry — стена «цена XOR сигнал» названа (в работе)
+
+Контрфакт (1.9) дал потолок +0.33% при входе по уровню. Проверяем достижимость:
+1. **Cross-вход на confirmed-сетапах** (`icebreaker_entry_cf.py` cross): +0.277% март / +0.223% апрель, payoff 2.4, WR 61–67% — ~80% потолка реальным taker-fill. Но close-confirmation = лёгкий lookahead.
+2. **Честный level-cross без confirmation** (`icebreaker_levelcross.py`, `detect_setups(arm_only=True)`, вход на ПЕРВОМ касании, фейки включены). Пилот FART+WIF: armed-cross **WR 19% / −0.081%** vs confirmed **WR 57% / +0.177%**. Payoff одинаков (~2.2) — рушится только WR, т.к. **81% касаний = фейк-поки**. **Стена:** close-confirmation = хороший сигнал/плохая цена; level-cross = хорошая цена/плохой сигнал. Инфо «пробой реален» приходит позже хорошей цены.
+3. **Flow/TIB на касании — DEAD** (`icebreaker_flow_gate.py`): OFI/dfrac/trade-rate/TIB-имбаланс/burst → **AUC ≈ 0.50 по всем**, гейт не двигает WR. Лента не отличает real/fakeout — дискриминатор (если есть) в книге, не в ленте.
+4. **Завтра:** Angle 2 — L2-книга на касании (far-side liquidity / support-pull / accumulation footprint) на FART/WIF/PEPE как фильтр. Полный 9-монет 2b (март+апрель) считается в фоне (`tmp/ib_lc_*`). Детали: [ICEBREAKER_RESEARCH.md](ICEBREAKER_RESEARCH.md) Фаза 2. Новое: `robust_levels.detect_setups(arm_only=)`, `icebreaker_{levelcross,flow_gate,entry_cf,pnl_decomp}.py`.
+
 ### 2026-06-23 — Icebreaker Фаза 1.9: vision-селекция «жирного» сетапа — реальна, но не торгуема
 
 Последний рычаг после Фазы 1.8: может ли Claude Vision (Sonnet 4.6 / OpenRouter) заменить дискреционный «глаз» скальпера, который берёт 1–2 жирных пробоя в день. `icebreaker_vision_select.py`: рендер **в момент пробоя** (свечи до брейка, уровень + volume profile, без будущего/исхода/гейт-цифр — чистый визуал, чинит lookahead-утечку Фазы 0), vision вслепую даёт score 0–10 + trade/skip, джойн к realized managed-exit. Полный март (318) + апрель OOS (335).

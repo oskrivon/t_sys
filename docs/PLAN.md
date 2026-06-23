@@ -183,21 +183,41 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
 раннерах, чего пассив 1.8 не может). Детали: `docs/ICEBREAKER_RESEARCH.md` Фаза 1.9.
 
 **Задачи:**
-- [ ] **(а) Level-cross на gated-сетапах (быстрый мост).** `icebreaker_entry_cf.py` mode
-  cross: вход на первом касании уровня внутри пробойной свечи (цена/время касания, не
-  close), тесный стоп, та же развязка. Сравнить close/level/cross. Покажет, fillable ли
-  потолок на confirmed-популяции.
-- [ ] **(б) Честный level-cross БЕЗ close-confirmation (решающий).** Вооружить gated-уровни
-  (гейты pre-breakout), сканировать ВСЕ касания, входить на первом — включая фейк-поки.
-  Переживёт ли +0.33% стоимость фейков (тесный стоп режет, но их больше)? Это и есть
-  реальная торгуемость. Март + апрель OOS.
-- [ ] **(в) TIB у пробоя (фильтр осведомлённого потока).** Tick/trade imbalance bars
-  (Лопез де Прадо): семплировать бары по накопленному знаковому имбалансу потока у
-  уровня → отличить информированный пробой от фейка. Как гейт для (б).
+- [x] **(а) Level-cross на confirmed-сетапах (мост) — ГОТОВО.** `icebreaker_entry_cf.py` mode
+  cross: вход на касании внутри пробойной свечи. **+0.277% март / +0.223% апрель, payoff 2.4,
+  WR 61–67%** — ~80% потолка реальным taker-входом. НО: использует close-confirmation
+  (лёгкий lookahead: знаешь, что свеча закрылась за уровнем).
+- [x] **(б) Честный level-cross БЕЗ close-confirmation — ГОТОВО (пилот), стена названа.**
+  `icebreaker_levelcross.py` (`detect_setups(arm_only=True)` + cross-trigger). Пилот FART+WIF
+  март, 1419 armed уровней: **armed-cross WR 19% / −0.081%** vs confirmed-cross WR 57% /
+  +0.177%. Payoff одинаков (~2.2) — рушится ТОЛЬКО win-rate: **81% касаний = фейк-поки**.
+  Стена: close-confirmation = фильтр фейков (хороший СИГНАЛ, плохая ЦЕНА); level-cross =
+  хорошая ЦЕНА, плохой СИГНАЛ. Инфо «пробой реален» приходит позже хорошей цены.
+  *Полный 9-монет март+апрель OOS считается в фоне* → `tmp/ib_lc_{mar,apr}.jsonl` +
+  `.log`, флаг `tmp/ib_lc_full.done`. **Утром проверить, что завершился (если нет — перезапустить).**
+- [x] **(в) TIB / flow-сигнал на касании — DEAD.** `icebreaker_flow_gate.py`: signed OFI /
+  directional fraction / trade-rate (2/5/15с) / TIB-имбаланс / burst в момент касания —
+  **AUC ≈ 0.50 по всем, гейт не двигает WR/expectancy** (пилот 1214). Поток ленты НЕ отличает
+  реальный пробой от фейка: само пересечение уже агрессия, продолжение решается RESTING-
+  ликвидностью (книга), а не лентой.
 
-**Данные/инфра:** `icebreaker_entry_cf.py` (close/level/cross), `icebreaker_pnl_decomp.py`,
-лента `data/icebreaker_active` (март+апрель), gated-дампы `tmp/ib_liq_empty{,_apr}.jsonl`,
-детектор `src/strategy/robust_levels.py`.
+**→ ЗАВТРА С УТРА: (г) Angle 2 — L2-книга на касании как фильтр real/fakeout** (есть L2 для
+FARTCOIN/WIF/PEPE, book-стор `/root/trading/data/ib_book` с Фазы 1.6):
+- [ ] На каждом armed-касании снять снимок стакана и посчитать: (1) **far-side resting
+  liquidity / void впереди** (пробой в тонкую книгу бежит, в плотную — фейк); (2)
+  **support-pull сигнатура** — снимается ли опора (бид/аск-стена) за мгновение до касания
+  (манипуляция → реальный каскад) vs стоит/абсорбирует (фейк); (3) **footprint накопления**
+  — дивергенция «цена дрейфует к уровню / signed-flow уже набирает в сторону будущего хода».
+- [ ] AUC этих L2-фич vs real/fakeout (как `flow_gate`, но из книги); если разделяют →
+  гейтить armed-cross, проверить, выходит ли в OOS-плюс (потолок +0.33%, floor −0.08%).
+- [ ] Переиспользовать `static_book`/`filter_book`/`icebreaker_book_setup.py` (Фаза 1.6) для
+  снимка стакана у сетапа; джойнить к armed-дампу по (symbol, ts_cross).
+
+**Данные/инфра готовы:** `icebreaker_levelcross.py` (armed + cross + flow-дамп),
+`icebreaker_flow_gate.py`, `icebreaker_entry_cf.py`, `icebreaker_pnl_decomp.py`,
+`robust_levels.detect_setups(arm_only=)`. Лента `data/icebreaker_active` (март+апрель),
+L2-стор `data/ib_book` (FART/WIF/PEPE), gated-дампы `tmp/ib_liq_empty{,_apr}.jsonl`. Детали:
+`docs/ICEBREAKER_RESEARCH.md` Фаза 1.9 + 2.
 
 ### Icebreaker: liquidity-vacuum breakout — довести до торгуемости (2026-06-22)
 
