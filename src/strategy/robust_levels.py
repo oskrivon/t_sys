@@ -258,7 +258,7 @@ def detect_setups(bars, *, lookback=480, base_bars=120, pivot_order=5,
                   brk=0.0015, min_score=0.0, require_squeeze=True,
                   one_sided_min=0.75, near_atr=1.0, cooldown=30, vp_bins=120,
                   air_max=0.6, edge_band=0.30, min_vol_at_level=0.04,
-                  min_poc_dist_atr=1.5):
+                  min_poc_dist_atr=1.5, arm_only=False):
     """Detect decisive breakouts of a HIGH-QUALITY level out of a squeezed base.
 
     Quality gates that fix the naive detector:
@@ -311,13 +311,22 @@ def detect_setups(bars, *, lookback=480, base_bars=120, pivot_order=5,
                     continue
                 # level = side-anchored cluster edge, not the wandering mean (#2)
                 L = cluster_level_price(cl, side)
-                # near the level now, broke decisively this bar
-                broke = ((side == "long" and c[i - 1] <= L and c[i] > L * (1 + brk)) or
-                         (side == "short" and c[i - 1] >= L and c[i] < L * (1 - brk)))
-                if not broke:
-                    continue
-                if abs(c[i - 1] - L) > near_atr * a[i]:
-                    continue
+                if arm_only:
+                    # ARM (no close-confirmation): price near the level and NOT yet
+                    # beyond it -> a trigger to enter on the intra-bar cross. Includes
+                    # levels that will only be poked (fakeouts) — the honest population.
+                    near = ((side == "long" and c[i] <= L) or
+                            (side == "short" and c[i] >= L))
+                    if not near or abs(c[i] - L) > near_atr * a[i]:
+                        continue
+                else:
+                    # near the level now, broke decisively this bar
+                    broke = ((side == "long" and c[i - 1] <= L and c[i] > L * (1 + brk)) or
+                             (side == "short" and c[i - 1] >= L and c[i] < L * (1 - brk)))
+                    if not broke:
+                        continue
+                    if abs(c[i - 1] - L) > near_atr * a[i]:
+                        continue
                 os = (np.mean(base_closes < L) if side == "long"
                       else np.mean(base_closes > L))
                 if os < one_sided_min:
