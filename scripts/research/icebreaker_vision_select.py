@@ -190,15 +190,17 @@ def auc(pos, neg):
     return (rp - len(pos) * (len(pos) + 1) / 2) / (len(pos) * len(neg))
 
 
-def load_env_key():
+def load_env_key(env_file=None):
     k = os.getenv("OPENROUTER_API_KEY")
     if k:
         return k
-    env = ROOT / ".env"
-    if env.exists():
-        for line in env.read_text().splitlines():
-            if line.startswith("OPENROUTER_API_KEY"):
-                return line.split("=", 1)[1].strip().strip('"').strip("'")
+    cands = [Path(env_file)] if env_file else []
+    cands += [ROOT / ".env", Path("/root/trading/.env")]
+    for env in cands:
+        if env and env.exists():
+            for line in env.read_text().splitlines():
+                if line.startswith("OPENROUTER_API_KEY"):
+                    return line.split("=", 1)[1].strip().strip('"').strip("'")
     return ""
 
 
@@ -237,13 +239,14 @@ def main():
     p.add_argument("--fee-maker", type=float, default=0.0002)
     p.add_argument("--fee-taker", type=float, default=0.00055)
     p.add_argument("--tag", default="")
+    p.add_argument("--env-file", default="", help="path to .env with OPENROUTER_API_KEY")
     p.add_argument("--reuse", action="store_true", help="reanalyze existing --dump, no API")
     args = p.parse_args()
 
     if args.reuse and args.dump.exists():
         scored = [json.loads(l) for l in open(args.dump) if l.strip()]
     else:
-        api_key = load_env_key()
+        api_key = load_env_key(args.env_file or None)
         if not api_key:
             print("ERROR: OPENROUTER_API_KEY missing (env or .env)"); sys.exit(1)
         recs = [json.loads(l) for l in open(args.cache) if l.strip()]
