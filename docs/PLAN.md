@@ -201,17 +201,22 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
   реальный пробой от фейка: само пересечение уже агрессия, продолжение решается RESTING-
   ликвидностью (книга), а не лентой.
 
-**→ ЗАВТРА С УТРА: (г) Angle 2 — L2-книга на касании как фильтр real/fakeout** (есть L2 для
-FARTCOIN/WIF/PEPE, book-стор `/root/trading/data/ib_book` с Фазы 1.6):
-- [ ] На каждом armed-касании снять снимок стакана и посчитать: (1) **far-side resting
-  liquidity / void впереди** (пробой в тонкую книгу бежит, в плотную — фейк); (2)
-  **support-pull сигнатура** — снимается ли опора (бид/аск-стена) за мгновение до касания
-  (манипуляция → реальный каскад) vs стоит/абсорбирует (фейк); (3) **footprint накопления**
-  — дивергенция «цена дрейфует к уровню / signed-flow уже набирает в сторону будущего хода».
-- [ ] AUC этих L2-фич vs real/fakeout (как `flow_gate`, но из книги); если разделяют →
-  гейтить armed-cross, проверить, выходит ли в OOS-плюс (потолок +0.33%, floor −0.08%).
-- [ ] Переиспользовать `static_book`/`filter_book`/`icebreaker_book_setup.py` (Фаза 1.6) для
-  снимка стакана у сетапа; джойнить к armed-дампу по (symbol, ts_cross).
+- [x] **(г) Angle 2 — L2-книга на касании — DEAD (2026-06-24).** `icebreaker_book_gate.py`
+  (FART/WIF/PEPE март, 1865 касаний): reconstruct resting-стакан на `ts_cross` и `ts_cross−2с`
+  → void впереди / support-pull / imbalance. **AUC 0.44–0.53 ≈ 0.50 по всем 9 фичам**, gate-sweep
+  плоский (−0.085%, WR 18–20% на любом отсечении). Дискриминатор real/fakeout НЕ в книге —
+  как и не в ленте (Angle 1). 81% касаний — неотделимые в real-time фейк-поки. Стена «цена XOR
+  сигнал» подтверждена с обеих сторон. Также подтвердил armed-cross на 9 монетах март+апрель OOS:
+  WR 19%, −0.086/−0.093%, payoff ~2.0.
+
+**→ Последний честный рычаг Фазы 2: (д) континуум подтверждения** (между raw-touch WR19%/хорошая
+цена и close-confirmation WR57%/плохая цена=вершина спайка):
+- [ ] Вход на касании ТОЛЬКО если пробой удержался Δ bps в течение Δt секунд (без lookahead:
+  только бары/тики ДО входа). Свип (Δ bps × Δt) — платим give-back за отсев фейков.
+- [ ] Кривая trade-off: на каждом (Δ,Δt) — entry-цена (сколько give-back), WR, expectancy,
+  fill-доля. Есть ли sweet-spot в OOS-плюс между floor −0.086% и потолком +0.33%.
+- [ ] Если нет — **ледокол закрыт окончательно по входу** (геометрия даёт потолок, но он
+  недостижим без lookahead). Переиспользовать `cross_trade` в `icebreaker_levelcross.py`.
 
 **Данные/инфра готовы:** `icebreaker_levelcross.py` (armed + cross + flow-дамп),
 `icebreaker_flow_gate.py`, `icebreaker_entry_cf.py`, `icebreaker_pnl_decomp.py`,
