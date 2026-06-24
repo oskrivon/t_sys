@@ -146,6 +146,8 @@ def main():
                 if args.dump is not None:
                     rec = to_rec(res, sym)
                     rec["net"] = res["gross"] - args.fee * (1.0 + res["exit_units"])
+                    # join keys for the L2 book gate (Angle 2): book snapshot at ts_cross
+                    rec["ts_cross"] = int(t_ts[ci]); rec["side"] = s.side; rec["level"] = float(s.level)
                     rec.update(flow_features(t_ts, t_qty, t_sd, ci, s.side))
                     dump_recs.append(rec)
         if args.confirmed:
