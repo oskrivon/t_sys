@@ -209,14 +209,18 @@ volatility squeeze, volume spike, wicks, hour_utc, RSI.
   сигнал» подтверждена с обеих сторон. Также подтвердил armed-cross на 9 монетах март+апрель OOS:
   WR 19%, −0.086/−0.093%, payoff ~2.0.
 
-**→ Последний честный рычаг Фазы 2: (д) континуум подтверждения** (между raw-touch WR19%/хорошая
-цена и close-confirmation WR57%/плохая цена=вершина спайка):
-- [ ] Вход на касании ТОЛЬКО если пробой удержался Δ bps в течение Δt секунд (без lookahead:
-  только бары/тики ДО входа). Свип (Δ bps × Δt) — платим give-back за отсев фейков.
-- [ ] Кривая trade-off: на каждом (Δ,Δt) — entry-цена (сколько give-back), WR, expectancy,
-  fill-доля. Есть ли sweet-spot в OOS-плюс между floor −0.086% и потолком +0.33%.
-- [ ] Если нет — **ледокол закрыт окончательно по входу** (геометрия даёт потолок, но он
-  недостижим без lookahead). Переиспользовать `cross_trade` в `icebreaker_levelcross.py`.
+- [x] **(д) Континуум подтверждения — DEAD, ЛЕДОКОЛ ЗАКРЫТ ПО ВХОДУ (2026-06-24).**
+  `icebreaker_confirm_sweep.py` (9 монет март, грид hold∈{0,2,5,10,30}с × Δ∈{0,10,20}bps):
+  подтверждение фильтрует фейки (WR 19→33–47%, kept good-rate 5→21%, раннеров оставляет), НО
+  expectancy минусовой в КАЖДОЙ ячейке (−0.067…−0.112%) — стоп якорён к уровню, give-back
+  0.13–0.33% раздувает avgLoss, payoff падает 2.04→1.0–1.8 быстрее WR. Потолок +0.33% требует
+  входа НА уровне = недостижим без lookahead. Апрель OOS не нужен (in-sample минус везде).
+
+**ИТОГ: ледокол закрыт по всем фронтам.** Селекция вакуум-пробоя реальна (favorable-excursion,
+WR), извлекаемого PnL под честным исполнением нет — все механизмы входа (raw-touch, tape-gate,
+book-gate, confirm-continuum) ≤ безубытка; единая суб-комиссионная/геометрическая стена. Дальше —
+другие треки (Miro / Weekend), не ледокол. Инфра вся в `scripts/research/icebreaker_*.py`, дампы
+`tmp/ib_*`, сторы `data/{icebreaker_active,ib_book,oi,klines}` на серве.
 
 **Данные/инфра готовы:** `icebreaker_levelcross.py` (armed + cross + flow-дамп),
 `icebreaker_flow_gate.py`, `icebreaker_entry_cf.py`, `icebreaker_pnl_decomp.py`,
