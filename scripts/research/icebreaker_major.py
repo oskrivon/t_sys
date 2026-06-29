@@ -20,6 +20,7 @@ import argparse
 import importlib.util
 import json
 import sys
+from bisect import bisect_left
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -88,17 +89,25 @@ def detect_major_breakouts(bars, bar_ms, *, lookback=288, swing_w=3, tol=0.002,
     support/resistance, not a mid-range pivot the price oscillates through. The
     broken side must be the origin side (long breaks resistance from below)."""
     sh, sl = find_swings(bars, swing_w)
+    # perf: swings are sorted -> bisect the window slice (not an O(n_swings) filter per
+    # bar); closes as a numpy array -> vectorized origin count. Behavior-identical to the
+    # prior O(n^2) form, needed for year-long inputs (covered by test_icebreaker_major).
+    closes_arr = np.array([b["close"] for b in bars], dtype="float64")
     out, last = [], -10 ** 9
     for i in range(lookback, len(bars)):
         if i - last < cooldown:
             continue
         c, pc, lo = bars[i]["close"], bars[i - 1]["close"], i - lookback
-        closes = [bars[j]["close"] for j in range(lo, i)]
+        win = closes_arr[lo:i]
+        nwin = i - lo
         fired = False
         for side, swings, pf in (("long", sh, "high"), ("short", sl, "low")):
-            pts = [(bars[j][pf], j) for j in swings if lo <= j < i]
-            if len(pts) < min_touches:
+            lo_i = bisect_left(swings, lo)
+            hi_i = bisect_left(swings, i)
+            sw = swings[lo_i:hi_i]
+            if len(sw) < min_touches:
                 continue
+            pts = [(bars[j][pf], j) for j in sw]
             for lvl, mem in cluster_levels(pts, tol):
                 if len(mem) < min_touches:
                     continue
@@ -106,8 +115,8 @@ def detect_major_breakouts(bars, bar_ms, *, lookback=288, swing_w=3, tol=0.002,
                 if span < min_span_bars:
                     continue
                 # respected level: price predominantly on the origin side
-                origin = sum(1 for x in closes if (x < lvl if side == "long" else x > lvl))
-                if origin / len(closes) < one_sided:
+                origin = int(np.count_nonzero(win < lvl if side == "long" else win > lvl))
+                if origin / nwin < one_sided:
                     continue
                 broke = ((side == "long" and pc <= lvl and c > lvl * (1 + brk)) or
                          (side == "short" and pc >= lvl and c < lvl * (1 - brk)))
@@ -118,7 +127,7 @@ def detect_major_breakouts(bars, bar_ms, *, lookback=288, swing_w=3, tol=0.002,
                     continue   # price wasn't hugging the level -> not a base break
                 out.append({"ts_close": bars[i]["ts"] + bar_ms, "side": side,
                             "level": lvl, "touches": len(mem), "span_bars": int(span),
-                            "lookback_bars": lookback, "one_sided": round(origin / len(closes), 2)})
+                            "lookback_bars": lookback, "one_sided": round(origin / nwin, 2)})
                 last, fired = i, True
                 break
             if fired:
