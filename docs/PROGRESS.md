@@ -2,6 +2,18 @@
 
 ## Лог
 
+### 2026-06-30 — Icebreaker: paper-демон ЗАПУЩЕН LIVE на сервере (#3 начат)
+
+Построил и задеплоил `scripts/run_icebreaker_paper.py` — paper-демон валидированного правила. Архитектура: standalone (managed-exit bespoke, фикс-TP/SL существующего PaperTradingService не подходит). Детектор `detect_major_breakouts` импортируется дословно из `icebreaker_major.py`; exit — инкрементальный класс `Position.step(bar)`, точное зеркало `simulate_exit_bars` (валидированный exit бар-based → live-управление по закрытым 1m-барам ФЕЙТФУЛ, не аппроксимация).
+
+**Faithfulness-гейт (replay):** прогнал на 4 монетах (FART/BTC/WIF/POPCAT, 11035 сетапов) — **0 расхождений** net vs research `simulate_exit_bars`; deployed-rule подмножество net +0.143% WR 61%. Live-логика доказанно идентична бэктесту.
+
+**Live smoke:** ccxt 4.5.49 подключается, опрос 1m по 41 монете, warmup 520 баров/монету, без ошибок.
+
+**Деплой:** коммит в фича-ветку `icebreaker-phase1-breakout-levels` (e2aa7db) → push → pull в worktree `/root/trading_ib` → запуск `python3` (сервер) detached через setsid. Лог `/root/trading/data/icebreaker_paper_trades.jsonl`, state для resume. Процесс живёт, `icebreaker_paper_started universe=41`, RAM не дрогнула (~3.5GB свободно — лёгкий). Добавил `@reboot` cron (переживёт перезагрузку; память отмечала прошлый VMware-balloon краш). Вселенная (41 монета) встроена в скрипт как `DEFAULT_UNIVERSE` (data/ в gitignore).
+
+**Что дальше:** копить сигналы ~6-8 недель (≈9/мес), сравнить live net vs валидированный +0.08-0.11% / tape +0.083%; фокус на слиппедже/частичных филлах на тонких щитках. Опц.: crash-watchdog (не только @reboot), чувствительность к фи-тиру/sizing.
+
 ### 2026-06-30 — Icebreaker: экономика перед paper (Sharpe/annual/ликвидность/плечо/VIP)
 
 Предварительный разбор перед #3 (всё на 3-летке, реалистичный дифф-haircut 10/5bps, если не указано).
