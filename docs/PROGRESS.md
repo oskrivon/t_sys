@@ -2,6 +2,20 @@
 
 ## Лог
 
+### 2026-07-01 — Мониторинг: дайджест теперь видит весь live-стек + heartbeat ледокола
+
+Daily-дайджест (`scripts/daily_report.py`, cron `0 8 * * *` из `/root/trading`) покрывал только docker/funding/screeners/volume-ranking — половина живых стратегий (icebreaker paper-демон, weekend, calendar, v-bottom) шла без мониторинга. Триггер: транзиентный снапшот 20:55 UTC 06-30 показал «No containers / Redis DOWN» (docker-сокет был кратко недоступен; ручной прогон сразу показал всё OK).
+
+**Ледокол «молча крутился»:** демон логировал только `started`/`entry`/`exit`/`sym_error`, поэтому в тихий период (нет сигналов, нет rate-limit ошибок) «жив и сканирует» было неотличимо от «завис/умер». Пустой state (0 байт) — не баг: `save_state()` зовётся только при открытии/закрытии позиции, а сделок ещё не было. Rate-limit warning'и (433 за 17ч) — спорадические на отдельных символах, не каждый поль; общий скан работает.
+
+**Сделано:**
+- `run_icebreaker_paper.py`: per-cycle **heartbeat** (`data/icebreaker_paper_heartbeat.json`: ts/cycle/scanned/universe/open/errors/cycle_s, атомарная запись через tmp+replace) + info-лог раз в ~15 мин. Чисто observability — детектор/exit не тронуты (replay-gate 0/11035 в силе). Демон перезапущен с `--heartbeat` (абсолютный путь в `/root/trading/data/`), `@reboot`-cron обновлён тем же аргументом.
+- `daily_report.py`: секция **ICEBREAKER (paper)** (liveness по heartbeat + open positions + paper P&L 24h/all-time + last signal) и **STRATEGIES (cron)** (last-activity weekend/calendar/v-bottom — информативно, не алармы: event-driven).
+
+**Проверено на сервере:** heartbeat пишется (`cycle 5, 41/41 scanned, 0 err, 6.9s/cycle`), дайджест рендерит обе новые секции. Деплой: демон+доки в ветке `icebreaker-phase1-breakout-levels`; `daily_report.py` выложен в `/root/trading` через `git checkout origin/<branch> -- scripts/daily_report.py` (сервер — деплой-чекаут без git-identity, master отстал от origin → авторинг коммитов там не делаем; файл драйвит cron напрямую, коммит уже на origin-ветке, доедет до master при мёрдже).
+
+**Наблюдение (не трогал):** FUNDING CAPTURE — no trades in 306h (~13 дней), funding-капча молчит с 18-06. Отдельно проверить.
+
 ### 2026-06-30 — Icebreaker: paper-демон ЗАПУЩЕН LIVE на сервере (#3 начат)
 
 Построил и задеплоил `scripts/run_icebreaker_paper.py` — paper-демон валидированного правила. Архитектура: standalone (managed-exit bespoke, фикс-TP/SL существующего PaperTradingService не подходит). Детектор `detect_major_breakouts` импортируется дословно из `icebreaker_major.py`; exit — инкрементальный класс `Position.step(bar)`, точное зеркало `simulate_exit_bars` (валидированный exit бар-based → live-управление по закрытым 1m-барам ФЕЙТФУЛ, не аппроксимация).

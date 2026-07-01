@@ -114,9 +114,13 @@ DB: `data/paper_trades.db` (таблица `weekend_trades`).
 **Покрывает:**
 - Docker containers status + Redis
 - Engine restart count (WARNING если >3/24h)
+- **Icebreaker (paper):** liveness по heartbeat (WARNING если beat >180s — демон завис/умер) + open positions + paper P&L 24h/all-time + last signal
+- **Strategies (cron):** last-activity weekend/calendar/v-bottom (информативно, не алармы — event-driven)
 - Funding capture: 24h trades, WR, funding earned, staleness warning
 - Screeners: scan count, alerts, ML filtered
 - Volume ranking: paper targets
+
+Liveness ледокола держится на heartbeat-файле `data/icebreaker_paper_heartbeat.json`, который демон перезаписывает каждый цикл (~20s). Демон должен стартовать с `--heartbeat /root/trading/data/icebreaker_paper_heartbeat.json` (абсолютный путь: демон работает из worktree `/root/trading_ib`, а дайджест читает из `/root/trading`); это уже в `@reboot`-cron. Если секция показывает `Daemon: DOWN` или `STALE` — перезапуск см. в описании icebreaker paper-демона.
 
 ```bash
 # Ручной запуск (консоль)
