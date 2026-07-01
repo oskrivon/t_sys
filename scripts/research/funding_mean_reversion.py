@@ -16,10 +16,11 @@ VERDICT: Signal exists at 24h horizon but heavily skewed by a few coins (ORDI).
          MaxDD is enormous relative to avg return.
 
 Usage:
-    ssh root@<SERVER_HOST> "cd /root/trading && python3 scripts/research/funding_mean_reversion.py"
+    python3 scripts/research/funding_mean_reversion.py
 """
 from __future__ import annotations
 
+import os
 import time
 import numpy as np
 import ccxt
@@ -29,8 +30,8 @@ from collections import defaultdict
 
 def main():
     bybit = ccxt.bybit({
-        'apiKey': '<BYBIT_API_KEY>',
-        'secret': '<BYBIT_API_SECRET>',
+        'apiKey': os.getenv('BYBIT_API_KEY', ''),
+        'secret': os.getenv('BYBIT_API_SECRET', ''),
     })
 
     COINS = [

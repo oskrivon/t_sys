@@ -47,19 +47,16 @@ wheels/
 logs/
 *.log
 
-# Data (большие файлы)
-data/raw/
-data/cache/
-data/models/
-data/reports/
-data/logs/
-data/*.db
+# Data (большие файлы — весь каталог не коммитим)
+data/
 *.parquet
 *.h5
 *.hdf5
+*.jsonl
 
 # Test
 .pytest_cache/
+.hypothesis/
 .coverage
 htmlcov/
 

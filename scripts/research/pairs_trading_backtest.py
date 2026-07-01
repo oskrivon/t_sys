@@ -5,6 +5,7 @@ When ratio deviates from moving average, trade the reversion.
 
 Delta-neutral: equal dollar amounts on each leg.
 """
+import os
 import ccxt
 import numpy as np
 import pandas as pd
@@ -12,8 +13,8 @@ from datetime import datetime, timedelta
 import time
 
 # --- Config ---
-API_KEY = "<BYBIT_API_KEY>"
-API_SECRET = "<BYBIT_API_SECRET>"
+API_KEY = os.getenv("BYBIT_API_KEY", "")
+API_SECRET = os.getenv("BYBIT_API_SECRET", "")
 
 PAIRS_TO_TEST = [
     ("ETH/USDT:USDT", "BTC/USDT:USDT", "ETH/BTC"),

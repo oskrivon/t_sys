@@ -4,11 +4,11 @@
 
 ```
 Host:     <SERVER_HOST>
-User:     root
-SSH:      ssh root@<SERVER_HOST>
+User:     <SERVER_USER>
+SSH:      ssh <SERVER_USER>@<SERVER_HOST>
 ```
 
-Credentials в `.env` (`SERVER_PASSWORD`).
+Все значения хоста и креды — только через `.env` (`SERVER_HOST`, `SERVER_USER`, `SERVER_PASSWORD`).
 
 ### Структура на сервере
 

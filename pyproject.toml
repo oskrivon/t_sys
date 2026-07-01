@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "trading-infrastructure"
 version = "0.1.0"
-description = "Гибкая торговая и аналитическая инфраструктура для криптовалютных бирж"
+description = "Modular research-and-execution platform for systematic crypto trading"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
-    {name = "Your Name", email = "your@email.com"}
+    {name = "osrivon-ui", email = "anotherratmail@proton.me"}
 ]
 
 dependencies = [

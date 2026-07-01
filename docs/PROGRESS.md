@@ -2,12 +2,6 @@
 
 ## Лог
 
-### 2026-07-01 — Icebreaker: фейд-расширение (торговать отскок) — maker-лид найден, tape-гейт запущен
-
-Заказчик: правило торгует пробой, а можно ли отскок? Наши данные подсказали (mombin: низкий mom-k0 → пробой мин-реверсит, а мы его выбрасываем). `icebreaker_fade_sim.py` (klines, 15 монет × 2y, 34109 сетапов; калибровка пробоя воспроизвела сертификат +0.087%): **mom-k0 = симметричный селектор** — фейд живёт в строго mom<0 хвосте. **stop0.8% mom<0 (n=5040): taker −0.033% мёртво / MAKER +0.037% WR59% median+0.36%, 21/24 мес maker-плюс, мемы 8/8.** CLEAN фейду не помогает (это фильтр пробоя). Фейд **структурно maker-исполним** (контр-тренд, пассивный лимит на правильной стороне) — этим отличается от пробоя (taker-only, Phase 1.8). Оговорки: maker-филл недоказан (гейт ниже), тонко (+0.037%), fee-tier-чувствительно, short-gamma.
-
-Запустил **решающий гейт `icebreaker_fade_fill.py`** — tape-based fill-риск на 9 мемах × Feb-May (серверная лента, бары из тиков). Пассивный лимит контр-направления + fade managed-exit от факт-филла + adverse-selection (gr_fill vs gr_miss). Инфра: `icebreaker_{fade_sim,fade_analyze,fade_fill}.py`, дамп data/ib_fade_2y.jsonl. Детали → docs/ICEBREAKER_RESEARCH.md.
-
 ### 2026-07-01 — Мониторинг: дайджест теперь видит весь live-стек + heartbeat ледокола
 
 Daily-дайджест (`scripts/daily_report.py`, cron `0 8 * * *` из `/root/trading`) покрывал только docker/funding/screeners/volume-ranking — половина живых стратегий (icebreaker paper-демон, weekend, calendar, v-bottom) шла без мониторинга. Триггер: транзиентный снапшот 20:55 UTC 06-30 показал «No containers / Redis DOWN» (docker-сокет был кратко недоступен; ручной прогон сразу показал всё OK).
