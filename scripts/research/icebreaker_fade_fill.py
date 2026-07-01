@@ -124,6 +124,43 @@ def good(mfes, gm):
     return sum(1 for m in mfes if m >= gm) / len(mfes) if mfes else float("nan")
 
 
+def _process_chunk(sym, t_ts, t_pr, t_qty, args, tagged):
+    """Detect breaks on this (coin, month) tape chunk, keep mom<mom-max, append fade fills."""
+    bars = mc.bars_np(t_ts, t_pr, t_qty, args.bar_ms)
+    bar_ts = np.array([b["ts"] for b in bars])
+    bar_cl = np.array([b["close"] for b in bars])
+    bks = major.detect_major_breakouts(
+        bars, args.bar_ms, lookback=480, swing_w=5, tol=0.0015, min_touches=4,
+        min_span_bars=120, brk=0.0015, cooldown=30, near_bars=30,
+        near_tol=0.003, one_sided=0.70)
+    kept = 0
+    for bk in bks:
+        ts0 = bk["ts_close"]; bside = bk["side"]
+        bidx = int(np.searchsorted(bar_ts, ts0))
+        if bidx >= len(bar_ts) or bar_ts[bidx] != ts0 or bidx < MOM_WIN:
+            continue
+        sign = 1.0 if bside == "long" else -1.0
+        mom = sign * (bar_cl[bidx] / bar_cl[bidx - MOM_WIN] - 1.0)
+        if mom >= args.mom_max:
+            continue
+        fs = fade_side(bside)
+        ei = bisect_left(t_ts, ts0)
+        if ei >= len(t_ts):
+            continue
+        entry_px = float(t_pr[ei])
+        base = fade_walk_exit(t_ts, t_pr, ei, entry_px, fs, FADE_CFG)
+        rec = {"sym": sym, "month": datetime.fromtimestamp(ts0 / 1000, timezone.utc).strftime("%Y-%m"),
+               "mom": mom, "fs": fs, "taker": base, "fills": {}}
+        for off in OFFSETS:
+            lim = limit_price(fs, entry_px, off)
+            for win in WINDOWS:
+                f = find_fill(t_ts, t_pr, ts0, fs, lim, win)
+                rec["fills"][(off, win)] = (
+                    fade_walk_exit(t_ts, t_pr, f[0], lim, fs, FADE_CFG) if f else None)
+        tagged.append(rec); kept += 1
+    return kept
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--store", required=True)
@@ -139,51 +176,29 @@ def main():
     fm, ft = args.fee_maker, args.fee_taker
     gm = FADE_CFG["tp1"]   # fade "good" = reached TP-distance favorable excursion
 
+    # month chunks — the 11GB box OOMs on a full multi-month concat (esp. FARTCOIN), so load
+    # the tape ONE (coin, month) at a time and free it. Cost: ~8h of truncated detector lookback
+    # at each month boundary (small, unbiased) — fine for a fill-gate first read.
+    dates = list(sbt.daterange(args.start, args.end))
+    months = sorted({d[:7] for d in dates})
+
     tagged = []
     for sym in args.symbols:
-        t_ts, t_pr, t_qty = [], [], []
-        for date in sbt.daterange(args.start, args.end):
-            if not sbt._parts(store, sym, date, "trades"):
+        skept = 0
+        for mo in months:
+            t_ts, t_pr, t_qty = [], [], []
+            for date in dates:
+                if date[:7] != mo or not sbt._parts(store, sym, date, "trades"):
+                    continue
+                a, b, c, _ = mc.load_trades_arr(store, sym, date)
+                if len(a):
+                    t_ts.append(a); t_pr.append(b); t_qty.append(c)
+            if not t_ts:
                 continue
-            a, b, c, _ = mc.load_trades_arr(store, sym, date)
-            if len(a):
-                t_ts.append(a); t_pr.append(b); t_qty.append(c)
-        if not t_ts:
-            print(f"  {sym}: no tape", flush=True); continue
-        t_ts = np.concatenate(t_ts); t_pr = np.concatenate(t_pr); t_qty = np.concatenate(t_qty)
-        bars = mc.bars_np(t_ts, t_pr, t_qty, args.bar_ms)
-        bar_ts = np.array([b["ts"] for b in bars])
-        bar_cl = np.array([b["close"] for b in bars])
-        bks = major.detect_major_breakouts(
-            bars, args.bar_ms, lookback=480, swing_w=5, tol=0.0015, min_touches=4,
-            min_span_bars=120, brk=0.0015, cooldown=30, near_bars=30,
-            near_tol=0.003, one_sided=0.70)
-        kept = 0
-        for bk in bks:
-            ts0 = bk["ts_close"]; bside = bk["side"]
-            bidx = int(np.searchsorted(bar_ts, ts0))
-            if bidx >= len(bar_ts) or bar_ts[bidx] != ts0 or bidx < MOM_WIN:
-                continue
-            sign = 1.0 if bside == "long" else -1.0
-            mom = sign * (bar_cl[bidx] / bar_cl[bidx - MOM_WIN] - 1.0)
-            if mom >= args.mom_max:
-                continue
-            fs = fade_side(bside)
-            ei = bisect_left(t_ts, ts0)
-            if ei >= len(t_ts):
-                continue
-            entry_px = float(t_pr[ei])
-            base = fade_walk_exit(t_ts, t_pr, ei, entry_px, fs, FADE_CFG)
-            rec = {"sym": sym, "month": datetime.fromtimestamp(ts0 / 1000, timezone.utc).strftime("%Y-%m"),
-                   "mom": mom, "fs": fs, "taker": base, "fills": {}}
-            for off in OFFSETS:
-                lim = limit_price(fs, entry_px, off)
-                for win in WINDOWS:
-                    f = find_fill(t_ts, t_pr, ts0, fs, lim, win)
-                    rec["fills"][(off, win)] = (
-                        fade_walk_exit(t_ts, t_pr, f[0], lim, fs, FADE_CFG) if f else None)
-            tagged.append(rec); kept += 1
-        print(f"  [{sym}] breaks={len(bks)} fade(mom<{args.mom_max})={kept}", flush=True)
+            t_ts = np.concatenate(t_ts); t_pr = np.concatenate(t_pr); t_qty = np.concatenate(t_qty)
+            skept += _process_chunk(sym, t_ts, t_pr, t_qty, args, tagged)
+            del t_ts, t_pr, t_qty
+        print(f"  [{sym}] fade(mom<{args.mom_max})={skept}", flush=True)
 
     n = len(tagged)
     print("\n" + "=" * 104)
