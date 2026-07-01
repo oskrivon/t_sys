@@ -26,6 +26,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 ENGINE_DB = Path("data/engine_state.db")
 PAPER_DB = Path("data/paper_trades.db")
+ICEBREAKER_LOG = Path("data/icebreaker_paper_trades.jsonl")
+ICEBREAKER_HB = Path("data/icebreaker_paper_heartbeat.json")
+
+# Event-driven cron strategies: last-activity from their logs (informational, not alarms —
+# these fire on schedule/events, so a stale log is normal, not a fault).
+CRON_STRATEGY_LOGS = {
+    "Weekend BTC": Path("data/logs/weekend.log"),
+    "Calendar":    Path("data/logs/calendar.log"),
+    "V-bottom":    Path("data/logs/v_bottom.log"),
+}
 
 
 # ------------------------------------------------------------------
@@ -310,6 +320,123 @@ def get_volume_ranking_report() -> str:
 
 
 # ------------------------------------------------------------------
+# Icebreaker (paper daemon)
+# ------------------------------------------------------------------
+
+def get_icebreaker_report() -> str:
+    """Liveness + paper P&L for the certified icebreaker daemon.
+
+    Liveness comes from the heartbeat file the daemon rewrites every cycle — this is the
+    only signal that distinguishes 'alive & scanning' from 'stuck/dead' during quiet periods
+    (no signals, no errors ⇒ the trade log stays silent for days by design)."""
+    lines = ["--- ICEBREAKER (paper) ---"]
+    now = datetime.now(timezone.utc)
+
+    hb = None
+    if ICEBREAKER_HB.exists():
+        try:
+            hb = json.loads(ICEBREAKER_HB.read_text())
+        except (json.JSONDecodeError, OSError):
+            hb = None
+
+    if hb:
+        age = now.timestamp() - hb.get("ts", 0) / 1000
+        alive = age < 180  # ~9 poll cycles at 20s; generous for occasional rate-limit stalls
+        lines.append(
+            f"  Daemon: [{'OK' if alive else 'STALE'}] beat {int(age)}s ago "
+            f"(cycle {hb.get('cycle')}, {hb.get('scanned')}/{hb.get('universe')} scanned, "
+            f"{hb.get('errors', 0)} err, {hb.get('cycle_s', '?')}s/cycle)"
+        )
+        if not alive:
+            lines.append("  WARNING: heartbeat stale — daemon stuck or down!")
+        open_syms = hb.get("open_syms") or []
+        lines.append(f"  Open positions: {len(open_syms)}"
+                     + (f" — {', '.join(open_syms)}" if open_syms else ""))
+    else:
+        # No heartbeat file: fall back to a process check so a fresh deploy still reports.
+        try:
+            r = subprocess.run(["pgrep", "-f", "run_icebreaker_paper"],
+                               capture_output=True, text=True, timeout=5)
+            alive = bool(r.stdout.strip())
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            alive = False
+        lines.append("  Daemon: process alive (heartbeat pending)" if alive
+                     else "  Daemon: DOWN — no heartbeat and no process!")
+
+    # Paper P&L from the append-only trade log (entry events + close records).
+    entries, closes = [], []
+    if ICEBREAKER_LOG.exists():
+        for ln in ICEBREAKER_LOG.read_text(errors="ignore").splitlines():
+            ln = ln.strip()
+            if not ln:
+                continue
+            try:
+                d = json.loads(ln)
+            except json.JSONDecodeError:
+                continue
+            if d.get("event") == "entry":
+                entries.append(d)
+            elif "net" in d:
+                closes.append(d)
+
+    def _dt(s):
+        try:
+            return datetime.fromisoformat(s)
+        except (TypeError, ValueError):
+            return None
+
+    cutoff = now - timedelta(hours=24)
+    ent_24 = [e for e in entries if (_dt(e.get("entry_time")) or now) > cutoff
+              and _dt(e.get("entry_time")) is not None]
+    cl_24 = [c for c in closes if (_dt(c.get("exit_time")) or now) > cutoff
+             and _dt(c.get("exit_time")) is not None]
+
+    if closes:
+        nets = [c["net"] for c in closes]
+        wr = sum(n > 0 for n in nets) / len(nets) * 100
+        lines.append(f"  All time: {len(entries)} entries, {len(closes)} closes "
+                     f"→ net {sum(nets)*100:+.2f}%, WR {wr:.0f}%, "
+                     f"avg {sum(nets)/len(nets)*100:+.3f}%/trade")
+    else:
+        lines.append(f"  All time: {len(entries)} entries, 0 closes")
+
+    lines.append(f"  Last 24h: {len(ent_24)} entries, {len(cl_24)} closes"
+                 + (f" → net {sum(c['net'] for c in cl_24)*100:+.2f}%" if cl_24 else ""))
+
+    if entries:
+        last = max(entries, key=lambda e: e.get("entry_time", ""))
+        lines.append(f"  Last signal: {(last.get('entry_time') or '?')[:16]} "
+                     f"{last.get('sym')} {last.get('side')} mom {last.get('mom', 0)*100:.1f}%")
+    else:
+        lines.append("  No signals yet (rule fires ~9/mo ≈ 1 per 3 days)")
+
+    return "\n".join(lines)
+
+
+# ------------------------------------------------------------------
+# Cron strategies (event-driven — last activity only)
+# ------------------------------------------------------------------
+
+def get_cron_strategies_report() -> str:
+    lines = ["--- STRATEGIES (cron) ---"]
+    now = datetime.now(timezone.utc)
+    for name, path in CRON_STRATEGY_LOGS.items():
+        if not path.exists():
+            lines.append(f"  {name}: no log yet")
+            continue
+        age_h = (now.timestamp() - path.stat().st_mtime) / 3600
+        last = ""
+        for ln in reversed(path.read_text(errors="ignore").splitlines()):
+            if ln.strip():
+                last = ln.strip()
+                break
+        lines.append(f"  {name}: last activity {age_h:.0f}h ago")
+        if last:
+            lines.append(f"    {last[:90]}")
+    return "\n".join(lines)
+
+
+# ------------------------------------------------------------------
 # Full Report
 # ------------------------------------------------------------------
 
@@ -320,6 +447,8 @@ def get_full_report() -> str:
     sections = [
         header,
         get_docker_health(),
+        get_icebreaker_report(),
+        get_cron_strategies_report(),
         get_funding_report(),
         get_screener_report(),
         get_volume_ranking_report(),
