@@ -203,8 +203,8 @@ cat .gitignore | grep .env
 
 ```env
 # Binance
-BINANCE_API_KEY=vmPUZE6mv9SD5VNHk4HlWFsOr6aKE2zvsw0MuIgwCIPy6utIco14y7Ju91duEh8A
-BINANCE_SECRET=NhqPtmdSJYdKjVHjA7PZj4Mge3R5YNiP1e3UZjInClVN65XAbvqqM6A7H5fATj0j
+BINANCE_API_KEY=<your-binance-api-key>
+BINANCE_SECRET=<your-binance-secret>
 BINANCE_TESTNET=true
 
 # Bybit
