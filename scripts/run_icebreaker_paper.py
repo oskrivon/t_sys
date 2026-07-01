@@ -222,7 +222,7 @@ def load_universe(universe_dir, symbols_file):
     return sorted(DEFAULT_UNIVERSE)
 
 
-def live(syms, log_path, state_path, poll_s=20):
+def live(syms, log_path, state_path, poll_s=20, heartbeat_path=None):
     import ccxt  # sync client; ~40 light REST calls/min is well within limits
     import structlog
     log = structlog.get_logger()
@@ -248,6 +248,21 @@ def live(syms, log_path, state_path, poll_s=20):
               for s, p in positions.items()}
         json.dump(st, open(state_path, "w"))
 
+    def save_heartbeat(cycle, scanned, errs, cycle_s):
+        """Liveness beacon (observability only; nothing here feeds detection/exit). Written
+        every cycle so external monitors can tell 'alive & scanning' from 'stuck/dead' even
+        during quiet periods with no signals and no errors."""
+        if not heartbeat_path:
+            return
+        hb = {"ts": int(time.time() * 1000),
+              "time": datetime.now(timezone.utc).isoformat(),
+              "cycle": cycle, "universe": len(syms), "scanned": scanned,
+              "open": len(positions), "open_syms": sorted(positions),
+              "errors": errs, "cycle_s": round(cycle_s, 1)}
+        tmp = str(heartbeat_path) + ".tmp"
+        json.dump(hb, open(tmp, "w"))
+        Path(tmp).replace(heartbeat_path)
+
     def fetch_closed(sym, limit):
         # Bybit returns the still-forming bar last; drop it so we only ever see closed bars.
         o = ex.fetch_ohlcv(ccxt_sym[sym], "1m", limit=limit)
@@ -256,8 +271,10 @@ def live(syms, log_path, state_path, poll_s=20):
         return bars[:-1] if bars else bars
 
     log.info("icebreaker_paper_started", universe=len(syms), log=str(log_path))
+    cycle = 0
     while True:
         t0 = time.time()
+        errs = 0
         for sym in syms:
             try:
                 need = WARMUP if not buffers[sym] else 5
@@ -308,8 +325,15 @@ def live(syms, log_path, state_path, poll_s=20):
                                  mom=round(sig["mom"] * 100, 2), entry=entry)
                         save_state()
             except Exception as e:
+                errs += 1
                 log.warning("icebreaker_paper_sym_error", sym=sym, error=str(e))
-        time.sleep(max(0, poll_s - (time.time() - t0)))
+        cycle += 1
+        cycle_s = time.time() - t0
+        save_heartbeat(cycle, len(syms) - errs, errs, cycle_s)
+        if cycle % 45 == 0:            # ~ every 15 min at poll_s=20 → positive liveness in the log
+            log.info("icebreaker_paper_heartbeat", cycle=cycle, open=len(positions),
+                     open_syms=sorted(positions), errors_last=errs)
+        time.sleep(max(0, poll_s - cycle_s))
 
 
 def main():
@@ -319,13 +343,15 @@ def main():
     ap.add_argument("--symbols-file", default="", help="txt of symbols (one/line); overrides --universe")
     ap.add_argument("--log", default="data/icebreaker_paper_trades.jsonl")
     ap.add_argument("--state", default="data/icebreaker_paper_state.json")
+    ap.add_argument("--heartbeat", default="data/icebreaker_paper_heartbeat.json",
+                    help="liveness beacon json (rewritten each cycle for external monitoring)")
     ap.add_argument("--poll-s", type=int, default=20)
     args = ap.parse_args()
     if args.replay:
         ok = replay(args.replay)
         sys.exit(0 if ok else 1)
     syms = load_universe(args.universe, args.symbols_file)
-    live(syms, args.log, args.state, args.poll_s)
+    live(syms, args.log, args.state, args.poll_s, args.heartbeat)
 
 
 if __name__ == "__main__":
